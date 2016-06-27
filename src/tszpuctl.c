@@ -181,13 +181,13 @@ int main(int argc, char **argv)
 		fseek(f, 0, SEEK_END);
 		sz = ftell(f);
 		if(sz > 8192){
-			fprintf(stderr, "Error: File over 8192 bytes (%d)\n", sz);
+			fprintf(stderr, "Error: File over 8192 bytes (%zu)\n", sz);
 			fclose(f);
 			unlink(tempfile);
 			return 1;
 		}
 		fseek(f, 0, SEEK_SET);
-		printf("Code RAM usage: (%d/8192)\n", sz);
+		printf("Code RAM usage: (%zu/8192)\n", sz);
 
 		fread(zpuram, 1, 8192, f);
 		fclose(f);
@@ -205,7 +205,6 @@ int main(int argc, char **argv)
 			perror("Failed to access FPGA to program ZPU");
 			return 1;
 		}
-
 	}
 
 	if(opt_save) {
