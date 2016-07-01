@@ -1,23 +1,37 @@
+#include <assert.h>
+#include <arpa/inet.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <getopt.h>
-#include <asm-generic/termbits.h>
 #include <asm-generic/ioctls.h>
 #include <fcntl.h>
 #include <unistd.h>
 #include <sys/types.h>
 #include <sys/stat.h>
+#include <sys/select.h>
 #include <errno.h>
 #include <stdint.h>
 #include <linux/types.h>
 #include <linux/limits.h>
 #include <math.h>
 #include <sys/time.h>
+#include <termios.h>
+#include <signal.h>
 
 #include "fpga.h"
 
 static int twifd;
+
+volatile uint32_t tick;
+void alarmsig(int x) {
+	tick++;
+}
+
+volatile uint32_t term;
+void termsig(int x) {
+	term = 1;
+}
 
 int get_model()
 {
@@ -42,7 +56,7 @@ void usage(char **argv) {
 		"\n"
 		"  -l, --load <path>      Run the specified binary or \".c\" file in the ZPU\n"
 		"  -s, --save             Puts ZPU inreset and output entire ZPU RAM to stdout\n"
-		"  -d, --dmesg            Output debug log from ZPU\n"
+		"  -x, --connect          Connect stdin/stdout to ZPU\n"
 		"  -c, --compile          Output a <filename>.bin in the same path\n"
 		"  -i, --info             Print execution status of the ZPU\n"
 		"  -r, --reset <1|0>      Reset ZPU (1 off, 0 on)\n"
@@ -74,10 +88,10 @@ int zpucompile(char *infile, char *outfile)
 
 int main(int argc, char **argv) 
 {
-	int c, i, ret;
+	int c, i;
 	int opt_info = 0;
 	int opt_reset = 0;
-	int opt_dmesg = 0;
+	int opt_connect = 0;
 	int opt_save = 0;
 	char *compile_path = 0;
 	char *opt_load = 0;
@@ -85,7 +99,7 @@ int main(int argc, char **argv)
 
 	static struct option long_options[] = {
 		{ "save", 0, 0, 's' },
-		{ "dmesg", 0, 0, 'd' },
+		{ "connect", 0, 0, 'x' },
 		{ "compile", 1, 0, 'c' },
 		{ "info", 0, 0, 'i' },
 		{ "reset", 1, 0, 'r' },
@@ -111,7 +125,7 @@ int main(int argc, char **argv)
 		return 1;
 	}
 
-	while((c = getopt_long(argc, argv, "sir:l:c:h", long_options, NULL)) != -1) {
+	while((c = getopt_long(argc, argv, "xsir:l:c:h", long_options, NULL)) != -1) {
 		switch(c) {
 		case 'i':
 			opt_info = 1;
@@ -121,8 +135,8 @@ int main(int argc, char **argv)
 			opt_reset++;
 			opt_info = 1;
 			break;
-		case 'd':
-			opt_dmesg = 1;
+		case 'x':
+			opt_connect = 1;
 			break;
 		case 's':
 			opt_save = 1;
@@ -163,7 +177,6 @@ int main(int argc, char **argv)
 		ssize_t sz;
 		uint8_t zpuram[8192];
 		memset(zpuram, 0, 8192);
-		uint8_t dat;
 		char *binfile;
 		char tempfile[] = "/tmp/zpu-bin-XXXXXX";
 
@@ -181,34 +194,29 @@ int main(int argc, char **argv)
 		fseek(f, 0, SEEK_END);
 		sz = ftell(f);
 		if(sz > 8192){
-			fprintf(stderr, "Error: File over 8192 bytes (%zu)\n", sz);
+			fprintf(stderr, "Error: File over 8192 bytes (%d)\n", sz);
 			fclose(f);
 			unlink(tempfile);
 			return 1;
 		}
 		fseek(f, 0, SEEK_SET);
-		printf("Code RAM usage: (%zu/8192)\n", sz);
+		fprintf(stderr, "Code RAM usage: (%d/8192)\n", sz);
 
 		fread(zpuram, 1, 8192, f);
 		fclose(f);
 
 		// Put ZPU in reset, program, take it out of reset
-		dat = 0x3;
-		ret = fpoke(twifd, 19, &dat, 1);
-		ret |= fpoke(twifd, 8192, zpuram, 4096);
-		ret |= fpoke(twifd, 12288, &zpuram[4096], 4096);
-		dat = 0;
-		ret |= fpoke(twifd, 19, &dat, 1);
-		unlink(tempfile);
+		fpoke8(twifd, 19, 0x3);
 
-		if(ret) {
-			perror("Failed to access FPGA to program ZPU");
-			return 1;
-		}
+		// 4094 is the max size so pokes must be broken up
+		fpokestream8(twifd, zpuram, 8192, 4094);
+		fpokestream8(twifd, &zpuram[4094], 12286, 4094);
+		fpokestream8(twifd, &zpuram[8188], 16380, 4);
+		fpoke8(twifd, 19, 0x0);
+		unlink(tempfile);
 	}
 
 	if(opt_save) {
-		uint8_t dat;
 		uint8_t zpuram[8192];
 
 		if (isatty(fileno(stdout))) {
@@ -218,106 +226,180 @@ int main(int argc, char **argv)
 			return 1;
 		}
 		/* Keep the ZPU in reset while we read memory */
-		dat = 0x3;
-		ret = fpoke(twifd, 19, &dat, 1);
-		ret |= fpeek(twifd, 8192, zpuram, 8192);
-		dat = 0;
-		ret |= fpoke(twifd, 19, &dat, 1);
-		ret |= fwrite(zpuram, 1, 8192, stdout);
-		if(ret){
-			perror ("FPGA Access failed");
-			return 1;
-		} 
+		fpoke8(twifd, 19, 0x3);
+		int ret = fpeekstream8(twifd, zpuram, 8192, 8192);
+
+		fpoke8(twifd, 19, 0x0);
+		fwrite(zpuram, 1, 8192, stdout);
+		if(ret != 0) return 1;
 	}
 
 	if(opt_reset) {
-		uint8_t dat;
 		if(opt_reset == 1) {
-			dat = 0x0;
-			ret = fpoke(twifd, 19, &dat, 1);
+			fpoke8(twifd, 19, 0x0);
 		} else {
-			dat = 0x3;
-			ret = fpoke(twifd, 19, &dat, 1);
-		}
-		if(ret) {
-			perror("Failed to reset the ZPU");
-			return 1;
+			fpoke8(twifd, 19, 0x3);
 		}
 	}
 
 	if(opt_info) {
-		uint8_t dat[2];
-		int ret;
+		uint8_t rst = fpeek8(twifd, 19);
+		uint8_t brk = fpeek8(twifd, 18);
 
-		ret = fpeek(twifd, 18, dat, 2);
-		if(ret) {
-			perror("Failed to talk to FPGA");
-			return 1;
-		}
-
-		printf("zpu_in_reset=%d\n", (dat[1] & 0x3) == 0x3 ? 1 : 0);
-		printf("zpu_in_break=%d\n", (dat[0] & 0x4) ? 1 : 0);
+		printf("zpu_in_reset=%d\n", (rst & 0x3) == 0x3 ? 1 : 0);
+		printf("zpu_in_break=%d\n", (brk & 0x4) ? 1 : 0);
 	}
 
-	#define FIFO_PUT 8192 + 0xcd4
-	#define FIFO_ADDR (FIFO_PUT + 1)
-	#define FIFO_SIZE 256
+	if(opt_connect) {
+		struct termios tios_orig;
+ 		struct sigaction sa;
+		int irqfd;
+		fd_set rfds, efds;
+		uint32_t fifo_adr;
+		uint32_t fifo_flags;
+		/* RX and TX naming is from the ZPU's point of view */
+		uint16_t txfifo_sz, txfifo_put_adr, txfifo_dat_adr, txfifo_get_adr;
+		uint16_t rxfifo_sz, rxfifo_put_adr, rxfifo_dat_adr, rxfifo_get_adr;
+		uint8_t txget, rxget, rxfifo_spc;
+		uint8_t txput = 0, rxput = 0;
+		uint8_t buf[8192];
+		const char *irq_preamble_cmd = "(echo 129 >/sys/class/gpio/export;"
+		  "echo in >/sys/class/gpio/gpio129/direction;"
+		  "echo rising >/sys/class/gpio/gpio129/edge) 2>/dev/null";
 
-	if(opt_dmesg) {
-		/*
-		uint8_t inbuf[8192];
-		struct timeval st, en;
-		int total_samples = 0;
+		system(irq_preamble_cmd);
 
-		#define SAMPLES 100000
-		gettimeofday(&st, NULL);
-		do {
-			fpeekstream8(twifd, inbuf, FIFO_ADDR, 256);
-			total_samples += 256;
-		} while (total_samples < SAMPLES);
-		gettimeofday(&en, NULL);
+		sa.sa_handler = termsig;
+		sigemptyset(&sa.sa_mask);
+		sa.sa_flags = 0;
+		sigaction(SIGHUP, &sa, NULL);
+		sigaction(SIGINT, &sa, NULL);
+		sigaction(SIGTERM, &sa, NULL);
+		sigaction(SIGABRT, &sa, NULL);
+		sigaction(SIGUSR1, &sa, NULL);
+		sigaction(SIGUSR2, &sa, NULL);
 
-		unsigned long long tus = ((en.tv_sec - st.tv_sec) * 1000000) + 
-		  (en.tv_usec + st.tv_usec);
+		fpeekstream8(twifd, (unsigned char *)&fifo_adr, 8192 + 0x3c, 4);
+		fifo_adr = ntohl(fifo_adr);
+		if (fifo_adr == 0 || fifo_adr >= 8192) {
+			fprintf(stderr, "ZPU connection refused\n");
+			close(twifd);
+			return 1;
+		}
+		fifo_adr += 8192;
+		fpeekstream8(twifd, (unsigned char *)&fifo_flags, fifo_adr, 4);
+		fifo_flags = ntohl(fifo_flags);
+		fifo_flags &= ~(1<<25); /* Enable TX fifo flow control */
+		fpoke8(twifd, fifo_adr, fifo_flags >> 24);
+		txfifo_sz = fifo_flags & 0xfff;
+		assert(txfifo_sz <= 256);
+		txfifo_put_adr = fifo_adr + 7;
+		txfifo_get_adr = txfifo_put_adr + 4;
+		txfifo_dat_adr = fifo_adr + 12;
+		setvbuf(stdout, NULL, _IONBF, 0);
 
-		fprintf(stderr, "Read %d samples in %0.3f seconds\n", 
-		  total_samples,
-		  (float)tus/1000000);*/
+		rxfifo_sz = (fifo_flags >> 12) & 0xfff;
+		assert(rxfifo_sz <= 256);
+		rxfifo_put_adr = txfifo_dat_adr + txfifo_sz + 3;
+		rxfifo_get_adr = rxfifo_put_adr + 4;
+		rxfifo_dat_adr = rxfifo_get_adr + 1;
 
-		/*
-		uint8_t inbuf[8192];
-		uint8_t fifo_sz;
-		uint8_t get = 0;
-		uint8_t put = 0;
+		irqfd = open("/sys/class/gpio/gpio129/value", O_RDONLY);
+		assert(irqfd != -1);
+		if (rxfifo_sz) {
+			fcntl(0, F_SETFL, fcntl(0, F_GETFL) | O_NONBLOCK);
+			if (isatty(0)) {
+				struct termios tios;
+				tcgetattr(0, &tios);
+				tios_orig = tios;
+				cfmakeraw(&tios);
+				tios.c_lflag |= ISIG;
+				tcsetattr(0, TCSANOW, &tios);
+			}
+		}
+		FD_ZERO(&rfds);
+		FD_ZERO(&efds);
+
+		rxfifo_spc = 0;
+		rxput = fpeek8(twifd, rxfifo_put_adr);
+		txget = txput = fpeek8(twifd, txfifo_put_adr);
+		fpoke8(twifd, txfifo_get_adr, txget);
 
 		while(1) {
-			// Skip reading put after looping back
-			// to the beginning of the fifo
-			//if(put == get)
-				put = fpeek8(twifd, FIFO_PUT);
+			if (FD_ISSET(irqfd, &efds)) txput = fpeek8(twifd, txfifo_put_adr);
 
-			if(put != get) {
-				int ret, rdsz;
+			if (txput != txget) {
+				int rdsz, rdsz0;
 
 				// If we're about to read past fifo_sz, read up
 				// to the end of it in a continuous chunk
-				// and read the rest in the next loop
-				if(put < get) { 
-					rdsz = FIFO_SIZE - get;
-					get = 0;
-				} else { 
-					rdsz = put - get;
-					get += rdsz;
+				if (txput < txget) { 
+					rdsz0 = txfifo_sz - txget;
+					fpeekstream8(twifd, buf, txfifo_dat_adr + txget, rdsz0);
+					txget = 0;
+				} else rdsz0 = 0;
+
+				rdsz = txput - txget;
+				if (rdsz) {
+					fpeekstream8(twifd, buf + rdsz0, txfifo_dat_adr + txget, rdsz);
+					txget = txput;
 				}
-				ret = fpeek(twifd, FIFO_ADDR + put, inbuf, rdsz);
+				rdsz += rdsz0;
 
-				fwrite(inbuf, 1, rdsz, stdout);
-
-				if(ret < 0) {
-					return 1;
-				} 
+				fpoke8(twifd, txfifo_get_adr, txget); 
+				fwrite(buf, 1, rdsz, stdout);
 			}
-		}*/
+
+			if (rxfifo_spc && FD_ISSET(0, &rfds)) {
+				ssize_t r;
+
+				r = read(0, buf, rxfifo_spc);
+				/* XXX: This should use stream i2c writes, not byte writes. -JO */
+				if (r > 0) {
+					for(i = 0; i < r; i++) {
+						fpoke8(twifd, rxfifo_dat_adr + rxput, buf[i]); 
+						rxput++;
+						if (rxput == rxfifo_sz) rxput = 0;
+					}
+					rxfifo_spc -= r;
+					if (rxfifo_spc == 0) /* Schedule IRQ */ 
+					  fpoke8(twifd, fifo_adr, (fifo_flags|(1<<26)) >> 24);
+					fpoke8(twifd, rxfifo_put_adr, rxput);
+				} else if (r == 0) { /* EOF */
+					fifo_flags |= (1<<25); /* Disable TX fifo flow control */
+					fpoke8(twifd, fifo_adr, fifo_flags >> 24);
+					break;
+				}
+			}
+
+			if (rxfifo_spc != (rxfifo_sz - 1)) {
+				rxget = fpeek8(twifd, rxfifo_get_adr);
+				if (rxget <= rxput) rxfifo_spc = rxfifo_sz - (rxput - rxget) - 1;
+				else rxfifo_spc = rxfifo_sz - (rxput + (rxfifo_sz - rxget)) - 1;
+			}
+
+			if (term) {
+				fifo_flags |= (1<<25); /* Disable TX fifo flow control */
+				fpoke8(twifd, fifo_adr, fifo_flags >> 24);
+				if (isatty(0)) tcsetattr(0, TCSANOW, &tios_orig);
+				break;
+			}
+
+			if (FD_ISSET(irqfd, &efds)) {
+				char x = '?';
+				lseek(irqfd, 0, 0);
+				read(irqfd, &x, 1);
+				assert (x == '0' || x == '1');
+				if (x == '1') continue;	
+			} else FD_SET(irqfd, &efds);
+
+			if (rxfifo_spc) FD_SET(0, &rfds); else FD_CLR(0, &rfds);
+			i = select(irqfd + 1, &rfds, NULL, &efds, NULL);
+			if (i == -1) {
+				FD_CLR(0, &rfds);
+				FD_CLR(irqfd, &efds);
+			} 
+		}
 	}
 
 	close(twifd);
