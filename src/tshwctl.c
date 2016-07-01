@@ -114,12 +114,7 @@ int main(int argc, char **argv)
 
 	if(opt_poke) {
 		if(opt_addr) {
-			int ret;
-			ret = fpoke(twifd, addr, &pokeval, 1);
-			if(ret) {
-				perror("Failed to write value to FPGA");
-				return 1;
-			}
+			fpoke8(twifd, addr, pokeval);
 		} else {
 			fprintf(stderr, "No address specified\n");
 			return 1;
@@ -128,13 +123,7 @@ int main(int argc, char **argv)
 
 	if(opt_peek) {
 		if(opt_addr) {
-			uint8_t data;
-			int ret = fpeek(twifd, addr, &data, 1);
-			if(ret) {
-				perror("Failed to read fpga address");
-				return 1;
-			}
-			printf("addr%d=0x%X\n", addr, data);
+			printf("addr%d=0x%X\n", addr, fpeek8(twifd, addr));
 		} else {
 			fprintf(stderr, "No address specified\n");
 			return 1;
@@ -142,13 +131,7 @@ int main(int argc, char **argv)
 	}
 
 	if(opt_input >= 0 && opt_output >= 0) {
-		int ret;
-		uint8_t dat = (uint8_t) opt_input;
-		ret = fpoke(twifd, 128 + opt_output, &dat, 1);
-		if(ret) {
-			perror("Failed to write crossbar value to FPGA");
-			return 1;
-		}
+		fpoke8(twifd, 128 + opt_output, (uint8_t)opt_input);
 	} else if (opt_input >= 0 || opt_output >= 0) {
 		fprintf(stderr, "You must specify both input and output\n");
 		return 1;
@@ -157,12 +140,7 @@ int main(int argc, char **argv)
 	if(opt_info) {
 		uint16_t model;
 		uint8_t rev, tmp[3];
-		int ret;
-		ret = fpeek(twifd, 304, tmp, 3);
-		if(ret) {
-			perror("Failed to get FPGA info");
-			return 1;
-		}
+		fpeekstream8(twifd, tmp, 304, 3);
 		model = tmp[1] | (tmp[0] << 8);
 		rev = tmp[2];
 
