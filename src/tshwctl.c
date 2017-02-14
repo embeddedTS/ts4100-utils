@@ -74,11 +74,6 @@ int main(int argc, char **argv)
 	};
 
 	twifd = fpga_init();
-	model = get_model();
-	if(model != 0x4100) {
-		fprintf(stderr, "Unsupported model 0x%X\n", model);
-		return 1;
-	}
 
 	if(twifd == -1) {
 		perror("Can't open FPGA I2C bus");
