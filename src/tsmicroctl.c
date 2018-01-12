@@ -93,6 +93,7 @@ void do_info(int twifd)
 
 	if(strstr(model, "4100")) {
 		/* Byte order is P1.2-P1.4, P2.0-P2.7, temp sensor */
+		printf("REVISION=%d\n", ((data[8] >> 8) & 0xF));
 		printf("AN_SUP_CAP_1=%d\n", sscale(data[0]));
 		printf("AN_SUP_CAP_2=%d\n", rscale(data[1], 20, 20));
 		printf("AN_MAIN_4P7V=%d\n", rscale(data[2], 20, 20));
@@ -104,7 +105,6 @@ void do_info(int twifd)
 		printf("AN_CHRG=%d\n", rscale(data[10], 422, 422));
 		printf("VDD_SOC_CAP=%d\n", sscale(data[11]));
 		printf("VDD_ARM_CAP=%d\n", sscale(data[12]));
-		//printf("SILAB_REV=%d\n", data[)
 	}
 }
 
