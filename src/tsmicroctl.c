@@ -115,6 +115,9 @@ static void usage(char **argv) {
 	  "  -h, --help            This message\n"
 	  "  -i, --info            Read all Silabs ADC values\n"
 	  "  -s, --sleep <seconds> Put the board in a sleep mode for n seconds\n"
+
+	  "  -e, --tssiloon          Enable charging of TS-SILO supercaps\n"
+	  "  -d, --tssilooff         Disable charging of TS-SILO supercaps\n"
 	  "    All values are returned in mV\n\n",
 	  argv[0]
 	);
@@ -123,11 +126,13 @@ static void usage(char **argv) {
 int main(int argc, char **argv)
 {
 	int c;
-	int twifd;
+	int twifd, opt_supercap = 0;
 
 	static struct option long_options[] = {
 	  { "info", 0, 0, 'i' },
 	  { "sleep", 1, 0, 's' },
+	  { "tssiloon", 0, 0, 'e'},
+	  { "tssilooff", 0, 0, 'd'},
 	  { "help", 0, 0, 'h' },
 	  { 0, 0, 0, 0 }
 	};
@@ -147,19 +152,32 @@ int main(int argc, char **argv)
 	if(twifd == -1)
 		return 1;
 
-	while((c = getopt_long(argc, argv, "is:h", long_options, NULL)) != -1) {
+	while((c = getopt_long(argc, argv, "edis:h",
+	  long_options, NULL)) != -1) {
 		switch (c) {
-		case 'i':
+		  case 'i':
 			do_info(twifd);
 			break;
-		case 's':
+		  case 's':
 			do_sleep(twifd, atoi(optarg));
 			break;
-		case 'h':
-		default:
+		  case 'e':
+			opt_supercap = 1;
+			break;
+		  case 'd':
+			opt_supercap = 2;
+			break;
+		  case 'h':
+		  default:
 			usage(argv);
 		}
 	}
+
+	if(opt_supercap) {
+		unsigned char dat[1] = {(opt_supercap & 0x1)};
+		write(twifd, dat, 1);
+	}
+
 
 	return 0;
 }
