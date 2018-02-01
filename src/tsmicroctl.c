@@ -112,12 +112,11 @@ static void usage(char **argv) {
 	fprintf(stderr, "Usage: %s [OPTION] ...\n"
 	  "Technologic Systems Microcontroller Access\n"
 	  "\n"	
-	  "  -h, --help            This message\n"
-	  "  -i, --info            Read all Silabs ADC values\n"
-	  "  -s, --sleep <seconds> Put the board in a sleep mode for n seconds\n"
-
-	  "  -e, --tssiloon          Enable charging of TS-SILO supercaps\n"
-	  "  -d, --tssilooff         Disable charging of TS-SILO supercaps\n"
+	  "  -h, --help           This message\n"
+	  "  -i, --info           Read all Silabs ADC values\n"
+	  "  -s, --sleep <sec>    Enter sleep mode for <sec> seconds\n"
+	  "  -e, --tssiloon       Enable charging of TS-SILO supercaps\n"
+	  "  -d, --tssilooff      Disable charging of TS-SILO supercaps\n"
 	  "    All values are returned in mV\n\n",
 	  argv[0]
 	);
