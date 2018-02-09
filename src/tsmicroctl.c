@@ -88,6 +88,7 @@ void do_sleep(int twifd, int seconds)
 void do_info(int twifd)
 {
 	uint16_t data[15];
+	unsigned int pct;
 	memset(data, 0, sizeof(uint16_t));
 	sread(twifd, data);
 
@@ -96,6 +97,15 @@ void do_info(int twifd)
 		printf("REVISION=%d\n", ((data[8] >> 8) & 0xF));
 		printf("AN_SUP_CAP_1=%d\n", sscale(data[0]));
 		printf("AN_SUP_CAP_2=%d\n", rscale(data[1], 20, 20));
+		
+		pct = ((data[1]*100/237));
+		if (pct > 311) {
+			pct = pct - 311;
+			if (pct > 100) pct = 100;
+		} else {
+			pct = 0;
+		} 
+		printf("SUPERCAP_PCT=%d\n", pct > 100 ? 100 : pct);
 		printf("AN_MAIN_4P7V=%d\n", rscale(data[2], 20, 20));
 		printf("MAIN_5V=%d\n", rscale(data[3], 536, 422));
 		printf("USB_OTG_5V=%d\n", rscale(data[4], 536, 422));
