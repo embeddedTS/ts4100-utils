@@ -1,0 +1,33 @@
+#!/bin/bash
+
+# Conservative value to wait for until shutting down
+RESET_PCT=90
+
+POWER_FAIL=128
+
+# Set up the power_fail input pin to use sysfs gpio interrupt
+echo "$POWER_FAIL" > /sys/class/gpio/export 2>/dev/null
+
+while true; do
+    let power_fail=$(cat /sys/class/gpio/gpio"$POWER_FAIL"/value)
+    if [ "$power_fail" -eq "1" ] ; then
+        eval "$(tsmicroctl -i)"
+        echo "Supercaps at $SUPERCAP_PCT"
+
+        if [ "$SUPERCAP_PCT" -le "$RESET_PCT" ]; then
+            # Code can be added below in order to turn off power-hungry
+            # devices, or start other shutdown procedures required.
+
+
+            # The wall command can be removed if wanted.
+
+            wall The script /usr/local/bin/tssilomon has detected main power has been lost!  Shutting down safely to prevent filesystem damage
+
+            shutdown -r now
+            exit
+        else
+            sleep .5
+        fi
+    fi
+    sleep .5
+done
