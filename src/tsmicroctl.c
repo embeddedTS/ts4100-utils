@@ -48,12 +48,12 @@ int silabs_init()
 
 uint16_t* sread(int twifd, uint16_t *data)
 {
-	uint8_t tmp[30];
-	bzero(tmp, 30);
+	uint8_t tmp[28];
+	bzero(tmp, 28);
 	int i;
 
-	read(twifd, tmp, 30);
-	for (i = 0; i < 15; i++)
+	read(twifd, tmp, 28);
+	for (i = 0; i < 14; i++)
 		data[i] = (tmp[i*2] << 8) | tmp[(i*2)+1];
 
 	return data;
