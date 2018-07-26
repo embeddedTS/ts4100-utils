@@ -4,6 +4,8 @@
 #include <assert.h>
 #include <unistd.h>
 #include <sys/time.h>
+#include <sys/reboot.h>
+
 #include "ispvm.h"
 #include "load_fpga-ts4100.h"
 
@@ -47,8 +49,9 @@ int main(int argc, char **argv)
 	  "can't find the file", "wrong file type", "file error",
 	  "option error", "crc verification error" };
 
-	if(argc != 2) {
-		printf("Usage: %s file.vme\n", argv[0]);
+	if(argc != 2 || argc != 3) {
+		printf("Usage: %s file.vme <reboot>\n", argv[0]);
+		printf("\tif reboot is specified it will reset the cpu after\n");
 		return 1;
 	}
 
@@ -75,6 +78,14 @@ int main(int argc, char **argv)
 		assert(x < 0);
 		printf("loadfpga_ok=0\n");
 		printf("loadfpga_error=\"%s\"\n", ispvmerr[-x]);
+	}
+
+	if(argc == 3) {
+		printf("rebooting...\n");
+		fflush(stdout);
+		/* Allow time for this to print */
+		sleep(1);
+		reboot(RB_AUTOBOOT);
 	}
 
 	return 0;
