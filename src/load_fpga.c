@@ -49,7 +49,7 @@ int main(int argc, char **argv)
 	  "can't find the file", "wrong file type", "file error",
 	  "option error", "crc verification error" };
 
-	if(argc != 2 || argc != 3) {
+	if(argc != 2 && argc != 3) {
 		printf("Usage: %s file.vme <reboot>\n", argv[0]);
 		printf("\tif reboot is specified it will reset the cpu after\n");
 		return 1;
