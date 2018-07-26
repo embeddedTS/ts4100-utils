@@ -19,10 +19,11 @@ void reset_ts4100(void)
 {
 	assert(gpio_export(TS4100_FPGA_RESETN) == 0);
 
-	gpio_direction(TS4100_JTAG_TMS, 1);
+	gpio_direction(TS4100_FPGA_RESETN, 1);
 	/* Give 10ms of reset */
 	usleep(1000*10);
-	gpio_direction(TS4100_JTAG_TMS, 2);
+	gpio_direction(TS4100_FPGA_RESETN, 2);
+	gpio_unexport(TS4100_FPGA_RESETN);
 }
 
 void init_ts4100(void)
