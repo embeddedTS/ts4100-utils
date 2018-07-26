@@ -3,6 +3,7 @@
 #include <string.h>
 #include <assert.h>
 #include <unistd.h>
+#include <sys/time.h>
 #include "ispvm.h"
 #include "load_fpga-ts4100.h"
 
@@ -67,6 +68,8 @@ int main(int argc, char **argv)
 	x = ispVM(&hardware, argv[1]);
 
 	if (x == 0) {
+		reset_ts4100();
+
 		printf("loadfpga_ok=1\n");
 	} else {
 		assert(x < 0);

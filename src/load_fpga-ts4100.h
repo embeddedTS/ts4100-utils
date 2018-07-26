@@ -3,6 +3,7 @@
 
 #include <stdint.h>
 
+void reset_ts4100(void);
 void init_ts4100(void);
 void restore_ts4100(void);
 int readport_ts4100(void);
