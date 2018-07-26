@@ -3,12 +3,43 @@
 #include <string.h>
 #include <assert.h>
 #include <unistd.h>
-#include "load_fpga-ts4100.h"
 #include "ispvm.h"
+#include "load_fpga-ts4100.h"
+
+char *get_model()
+{
+	FILE *proc;
+	char mdl[256];
+	char *ptr;
+	int sz;
+
+	proc = fopen("/proc/device-tree/model", "r");
+	if (!proc) {
+	    perror("model");
+	    return 0;
+	}
+	sz = fread(mdl, 256, 1, proc);
+	ptr = strstr(mdl, "TS-");
+	return strndup(ptr, sz - (mdl - ptr));
+}
+
+void udelay_imx6(unsigned int us)
+{
+	struct timeval start;
+	struct timeval now;
+	uint32_t elapsed = 0;
+
+	gettimeofday(&start, NULL);
+	do {
+		gettimeofday(&now, NULL);
+		elapsed = (now.tv_usec - start.tv_usec);
+	} while(elapsed < us);
+}
 
 int main(int argc, char **argv)
 {
 	int x;
+	char *model = 0;
 	struct ispvm_f hardware;
 
 	const char * ispvmerr[] = { "pass", "verification fail",
@@ -20,12 +51,18 @@ int main(int argc, char **argv)
 		return 1;
 	}
 
-	hardware.init = init_ts4100;
-	hardware.restore =restore_ts4100;
-	hardware.readport = readport_ts4100;
-	hardware.writeport = writeport_ts4100;
-	hardware.sclock = sclock_ts4100;
-	hardware.udelay = udelay_imx6;
+	model = get_model();
+	if(strstr(model, "4100")) {
+		hardware.init = init_ts4100;
+		hardware.restore =restore_ts4100;
+		hardware.readport = readport_ts4100;
+		hardware.writeport = writeport_ts4100;
+		hardware.sclock = sclock_ts4100;
+		hardware.udelay = udelay_imx6;
+	} else {
+		printf("Model \"%s\" not supported\n", model);
+		return 1;
+	}
 
 	x = ispVM(&hardware, argv[1]);
 
