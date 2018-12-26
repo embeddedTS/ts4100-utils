@@ -57,7 +57,7 @@
 #define ZPU_RXFIFO_SIZE	16
 #define ZPU_TXFIFO_NOFLOW_OPT (1<<25)
 static struct zpu_fifo {
-	unsigned long flags;				// buffer sz, flow opt
+	volatile unsigned long flags;			// buffer sz, flow opt
 	unsigned long txput;				// TX FIFO head
 	volatile unsigned long txget;			// TX FIFO tail
 	unsigned char txdat[ZPU_TXFIFO_SIZE];		// TX buffer
@@ -137,26 +137,38 @@ void _buf_emitter(char c, void *pData)
  * Once the byte is added to the FIFO, raise the IRQ with the address of the
  * TX FIFO head. When the CPU reads the current TX FIFO head, the IRQ is cleared
  * automatically by the FPGA.
+ *
+ * This function will not immediately return if the last byte put in to the TX
+ * FIFO is one pos. behind the current tail which would result in the current
+ * head and tail pos. being the same as head is post incremented. This only
+ * applies if the CPU has requested flow control to be enabled.
+ *
+ * A intermediate variable is used for the TX FIFO head location.
+ *
  * Can be called directly
  */
 void putc(char c)
 {
 	unsigned long put = fifo.txput;
 
-	if (fifo.flags & ZPU_TXFIFO_NOFLOW_OPT) {
-		fifo.txdat[put++] = c;
-		if (put == sizeof(fifo.txdat)) put = 0;
-	} else {
-		fifo.txdat[put++] = c;
-		if (put == sizeof(fifo.txdat)) put = 0;
-		/* Pause until FIFO not full */
+	fifo.txdat[put++] = c;
+	if (put == sizeof(fifo.txdat)) put = 0;
+
+	/* If the head was just set to the tail position after incrementing, and
+	 * the CPU has requested that flow control is enabled; set the head loc.
+	 * to just behind the tail, assert the IRQ, and spin until the tail is
+	 * moved (data read by CPU) or flow control is disabled by the CPU.
+	 */
+	if (put == fifo.txget &&
+	  (fifo.flags & ZPU_TXFIFO_NOFLOW_OPT) == 0) {
+		fifo.txput = (put - 1);
+		IRQ0_REG = (unsigned long)(&fifo.txput) + 3;
+
 		while (put == fifo.txget &&
 		  (fifo.flags & ZPU_TXFIFO_NOFLOW_OPT) == 0);
 	}
 
 	fifo.txput = put;
-
-	/* Assert IRQ until I2C reads the LSB of fifo.txput */
 	IRQ0_REG = (unsigned long)(&fifo.txput) + 3;
 }
 
@@ -170,25 +182,54 @@ void _char_emitter(char c, void *pData)
 
 /* Place a null terminated string in to the TX FIFO.
  * This will directly write to the FIFO itself.
+ *
+ * Once the string has been completely added to the FIFO, raise the IRQ with the
+ * address of the TX FIFO head. When the CPU reads the current TX FIFO head, the
+ * IRQ is automatically cleared by the FPGA.
+ *
+ * This function will not immediately return if the last byte put in to the TX
+ * FIFO is one pos. behind the current tail which would result in the current
+ * head and tail pos. being the same as head is post incremented. This only
+ * applies if the CPU has requested flow control to be enabled.
+ *
+ * If the string is longer than the TX FIFO or there is not enough space, so
+ * long as flow control is enabled no data will be lost.
+ *
+ * A intermediate variable is used for the TX FIFO head location.
+ *
  * Can be called directly
  */
 int puts(const char *s)
 {
 	unsigned long put = fifo.txput;
 	unsigned char c;
-	if (fifo.flags & ZPU_TXFIFO_NOFLOW_OPT) while ((c = *(s++)) != 0) {
+
+	while ((c = *(s++)) != 0) {
 		fifo.txdat[put++] = c;
 		if (put == sizeof(fifo.txdat)) put = 0;
-	} else {
-		while ((c = *(s++)) != 0) {
-			fifo.txdat[put++] = c;
-			if (put == sizeof(fifo.txdat)) put = 0;
-			/* Pause until FIFO not full */
+
+		/* If the head was just set to the tail position after
+		 * incrementing, and the CPU has request that flow control is
+		 * enabled; set the head loc. to just behind the tail, assert
+		 * the IRQ, and spin until the tail is moved (data read by CPU)
+		 * or flow control is disabled by the CPU.
+		 *
+		 * This can happen if the string is bigger than the FIFO or if
+		 * there is already data waiting in the FIFO.
+		 */
+		if (put == fifo.txget &&
+		  (fifo.flags & ZPU_TXFIFO_NOFLOW_OPT) == 0) {
+			fifo.txput = (put - 1);
+			IRQ0_REG = (unsigned long)(&fifo.txput) + 3;
+
 			while (put == fifo.txget &&
 			  (fifo.flags & ZPU_TXFIFO_NOFLOW_OPT) == 0);
 		}
 	}
+
 	fifo.txput = put;
+	IRQ0_REG = (unsigned long)(&fifo.txput) + 3;
+
 	return 0;
 }
 
