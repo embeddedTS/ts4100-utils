@@ -25,23 +25,23 @@ int gpio_direction(int gpio, int dir)
 
 	if(dir == 2 && gpiofd){
 		if (4 != write(gpiofd, "high", 4)) {
-			fprintf(stderr, "Couldn't set GPIO %d direction to out/high: %s\n", 
-				gpio,
-				strerror(errno));
+			fprintf(stderr,
+			  "Couldn't set GPIO %d direction to out/high: %s\n",
+			  gpio, strerror(errno));
 			ret = -2;
 		}
 	} else if(dir == 1 && gpiofd){
 		if (3 != write(gpiofd, "out", 3)) {
-			fprintf(stderr, "Couldn't set GPIO %d direction to out/low: %s\n", 
-				gpio,
-				strerror(errno));
+			fprintf(stderr,
+			  "Couldn't set GPIO %d direction to out/low: %s\n",
+			  gpio,	strerror(errno));
 			ret = -3;
 		}
 	} else if(gpiofd) {
 		if(2 != write(gpiofd, "in", 2)) {
-			fprintf(stderr, "Couldn't set GPIO %d direction to in: %s\n", 
-				gpio,
-				strerror(errno));
+			fprintf(stderr,
+			  "Couldn't set GPIO %d direction to in: %s\n",
+			  gpio,	strerror(errno));
 			ret = -4;
 		}
 	}
