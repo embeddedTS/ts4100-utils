@@ -20,9 +20,12 @@
 #include <signal.h>
 
 #include "fpga.h"
+#include "tszpufifo.h"
 
 static int twifd;
 
+static struct termios tios_orig;
+static struct sigaction sa;
 volatile uint32_t tick;
 void alarmsig(int x) {
 	tick++;
@@ -261,25 +264,17 @@ int main(int argc, char **argv)
 	}
 
 	if(opt_connect) {
-		struct termios tios_orig;
- 		struct sigaction sa;
 		int irqfd;
+		ssize_t r;
+		size_t wrsz;
+		int rdsz;
 		fd_set rfds, efds;
-		uint32_t fifo_adr;
-		uint32_t fifo_flags;
-		/* RX and TX naming is from the ZPU's point of view */
-		uint16_t txfifo_sz, txfifo_put_adr;
-		uint16_t txfifo_dat_adr, txfifo_get_adr;
-		uint16_t rxfifo_sz, rxfifo_put_adr;
-		uint16_t rxfifo_dat_adr, rxfifo_get_adr;
-		uint8_t txget, rxget, rxfifo_spc;
-		uint8_t txput = 0, rxput = 0;
-		const char *irq_preamble_cmd =
-		  "(echo 129 >/sys/class/gpio/export;"
-		  "echo in >/sys/class/gpio/gpio129/direction;"
-		  "echo rising >/sys/class/gpio/gpio129/edge) 2>/dev/null";
 
-		system(irq_preamble_cmd);
+		irqfd = zpu_fifo_init(twifd, 1);
+		if (irqfd == -1) {
+			fprintf(stderr, "Unable to open I2C file!\n");
+			return 1;
+		}
 
 		/* Catch any signals that might be received.
 		 * Later used to gracefully shutdown the FIFO pipe
@@ -294,82 +289,22 @@ int main(int argc, char **argv)
 		sigaction(SIGUSR1, &sa, NULL);
 		sigaction(SIGUSR2, &sa, NULL);
 
-		/*
-		 * Set up FIFO link addresses
+		/* Set up stdin if it is a terminal, to be nonblocking, raw,
+		 * with signal generation.
 		 */
-
-		/* The ZPU stores the FIFO struct start address at 0x203C in
-		 * FPGA I2C address map. However from the ZPU context it is at
-		 * 0x3C. Acquire the struct address, byteswap, check it, put it
-		 * in FPGA I2C address context.
-		 */
-		fpeekstream8(twifd, (unsigned char *)&fifo_adr, 8192 + 0x3c, 4);
-		fifo_adr = ntohl(fifo_adr);
-		if (fifo_adr == 0 || fifo_adr >= 8192) {
-			fprintf(stderr, "ZPU connection refused\n");
-			close(twifd);
-			return 1;
+		fcntl(STDIN_FILENO, F_SETFL,
+		  fcntl(STDIN_FILENO, F_GETFL) | O_NONBLOCK);
+		if (isatty(STDIN_FILENO)) {
+			struct termios tios;
+			tcgetattr(STDIN_FILENO, &tios);
+			tios_orig = tios;
+			cfmakeraw(&tios);
+			tios.c_lflag |= ISIG;
+			tcsetattr(STDIN_FILENO, TCSANOW, &tios);
 		}
-		fifo_adr += 8192;
-
-		/* Now that we have the start of the FIFO struct in the ZPU,
-		 * start getting flags and other data addresses from it.
-		 * ZPU FIFO struct looks like:
-		 *
-		 * static struct zpu_fifo {
-		 *   uint32_t flags;				// sizes, opt
-		 *   uint32_t txput;				// TX FIFO head
-		 *   volatile uint32_t txget;			// TX FIFO tail
-		 *   uint8_t txdat[ZPU_TXFIFO_SIZE];		// TX buffer
-		 *   volatile uint32_t rxput;			// RX FIFO head
-		 *   uint32_t rxget;				// RX FIFO tail
-		 *   volatile uint8_t rxdat[ZPU_RXFIFO_SIZE];	// RX buffer
-		 * } fifo;
-		 */
-		fpeekstream8(twifd, (unsigned char *)&fifo_flags, fifo_adr, 4);
-		fifo_flags = ntohl(fifo_flags);
-		fifo_flags &= ~(1<<25); /* Enable TX fifo flow control */
-		fpoke8(twifd, fifo_adr, fifo_flags >> 24);
-
-		txfifo_sz = fifo_flags & 0xfff;
-		assert(txfifo_sz <= 256);
-		txfifo_put_adr = fifo_adr + 7;
-		txfifo_get_adr = txfifo_put_adr + 4;
-		txfifo_dat_adr = fifo_adr + 12;
-
-		rxfifo_sz = (fifo_flags >> 12) & 0xfff;
-		assert(rxfifo_sz <= 256);
-		rxfifo_put_adr = txfifo_dat_adr + txfifo_sz + 3;
-		rxfifo_get_adr = rxfifo_put_adr + 4;
-		rxfifo_dat_adr = rxfifo_get_adr + 1;
-		if (rxfifo_sz) {
-			fcntl(STDIN_FILENO, F_SETFL,
-			  fcntl(STDIN_FILENO, F_GETFL) | O_NONBLOCK);
-			if (isatty(STDIN_FILENO)) {
-				struct termios tios;
-				tcgetattr(STDIN_FILENO, &tios);
-				tios_orig = tios;
-				cfmakeraw(&tios);
-				tios.c_lflag |= ISIG;
-				tcsetattr(STDIN_FILENO, TCSANOW, &tios);
-			}
-		}
-
-		/* Get current RX FIFO position.
-		 * Zero out TX FIFO by setting tail to head.
-		 */
-		rxput = fpeek8(twifd, rxfifo_put_adr);
-		txget = txput = fpeek8(twifd, txfifo_put_adr);
-		fpoke8(twifd, txfifo_get_adr, txget);
-		rxfifo_spc = 0;
-
 
 		/* Set stdout to be unbuffered */
 		setvbuf(stdout, NULL, _IONBF, 0);
-
-		/* ZPU drives the FPGA IRQ line. */
-		irqfd = open("/sys/class/gpio/gpio129/value", O_RDONLY);
-		assert(irqfd != -1);
 
 		FD_ZERO(&rfds);
 		FD_ZERO(&efds);
@@ -378,102 +313,33 @@ int main(int argc, char **argv)
 			/* When there is an interrupt from the ZPU, read the
 			 * current FIFO tail; this clears the IRQ from FPGA. */
 			if (FD_ISSET(irqfd, &efds)) {
-				txput = fpeek8(twifd, txfifo_put_adr);
+				do {
+					rdsz = zpu_fifo_get(twifd, buf, 256);
+					fwrite(buf, 1, rdsz, stdout);
+				} while (rdsz && !term);
 			}
 
-			/* ZPU sending data to host
-			 *
-			 * If head pos. is behind the tail pos., then host will
-			 * pull data out through the end of the FIFO in one
-			 * contiguous chunk. rdsz0 is used in this case as an
-			 * offset for later calculating the full count.
-			 *
-			 * Host pull out data from the tail through the current
-			 * head.
-			 *
-			 * Update ZPU RAM and our local var with new tail pos.
+			/* Read data from stdin and write it out to the FIFO.
+			 * Since it is possible to not do a full write, need to
+			 * loop until all data is written out.
 			 */
-			if (txput != txget) {
-				int rdsz, rdsz0;
-
-				if (txput < txget) { 
-					rdsz0 = txfifo_sz - txget;
-					fpeekstream8(twifd, buf,
-					  txfifo_dat_adr + txget, rdsz0);
-					txget = 0;
-				} else rdsz0 = 0;
-
-				rdsz = txput - txget;
-				if (rdsz) {
-					fpeekstream8(twifd, buf + rdsz0,
-					  txfifo_dat_adr + txget, rdsz);
-					txget = txput;
-				}
-
-				rdsz += rdsz0;
-				fpoke8(twifd, txfifo_get_adr, txget); 
-				fwrite(buf, 1, rdsz, stdout);
-			}
-
-			/* ZPU recv. data from host
-			 *
-			 * If the RX buffer has free space, and there is data
-			 * waiting to be written (from this application's stdin)
-			 * then write to RX buffer.
-			 *
-			 * Send data from host to ZPU RX buffer, up to the max
-			 * amount of available free space. Then adjust free
-			 * space counter and update FIFO head in ZPU.
-			 *
-			 * If an EOF is received from stdin, disable ZPU TX FIFO
-			 * flow control and break from the main loop.
-			 */
-			if (rxfifo_spc && FD_ISSET(0, &rfds)) {
-				ssize_t r;
-
-				r = read(0, buf, rxfifo_spc);
-
+			if (FD_ISSET(0, &rfds)) {
+				wrsz = 0;
+				r = read(0, buf, 16);
 				if (r > 0) {
-					/* XXX: This should use stream i2c
-					 * writes, not byte writes. -JO */
-					for(i = 0; i < r; i++) {
-						fpoke8(twifd,
-						  rxfifo_dat_adr + rxput,
-						  buf[i]); 
-						rxput++;
-						if (rxput == rxfifo_sz) {
-							rxput = 0;
-						}
-					}
-					rxfifo_spc -= r;
-					fpoke8(twifd, rxfifo_put_adr, rxput);
+					do {
+						wrsz = wrsz + zpu_fifo_put(twifd,
+						  buf + wrsz, r - wrsz);
+					} while (r != wrsz);
 				} else if (r == 0) { /* EOF */
-					/* Disable TX fifo flow control */
-					fifo_flags |= (1<<25);
-					fpoke8(twifd, fifo_adr,
-					  (fifo_flags >> 24));
+					zpu_fifo_deinit(twifd);
 					break;
-				}
-			}
-
-			/* Recalculate the ZPU RX buffer free space */
-			if (rxfifo_spc != (rxfifo_sz - 1)) {
-				rxget = fpeek8(twifd, rxfifo_get_adr);
-				if (rxget <= rxput) {
-					rxfifo_spc =
-					  rxfifo_sz - (rxput - rxget) - 1;
-				} else {
-					rxfifo_spc =
-					  rxfifo_sz -
-					  (rxput + (rxfifo_sz - rxget)) - 1;
 				}
 			}
 
 			/* This process recevied a signal of some kind */
 			if (term) {
-				/* Disable TX fifo flow control */
-				fifo_flags |= (1<<25);
-				fpoke8(twifd, fifo_adr, fifo_flags >> 24);
+				zpu_fifo_deinit(twifd);
 				break;
 			}
 
@@ -504,8 +370,7 @@ int main(int argc, char **argv)
 				FD_SET(irqfd, &efds);
 			}
 
-			if (rxfifo_spc) FD_SET(0, &rfds);
-			else FD_CLR(0, &rfds);
+			FD_SET(0, &rfds);
 
 			i = select(irqfd + 1, &rfds, NULL, &efds, NULL);
 			if (i == -1) {
