@@ -79,8 +79,7 @@ static void zpu_rx_recalc(int twifd)
  */
 int32_t zpu_fifo_init(int twifd, int flow_control)
 {
-	uint8_t gpio_buf[64];
-	int32_t ret;
+	char gpio_buf[64];
 
 	/* Use gpiolib functions to open IRQ, set input, and rising edge trig */
 	gpio_export(FPGA_IRQ);
@@ -96,12 +95,12 @@ int32_t zpu_fifo_init(int twifd, int flow_control)
 	 * 0x3C. Acquire the struct address, byteswap, check it, put it
 	 * in FPGA I2C address context.
 	 */
-	fpeekstream8(twifd, (unsigned char *)&fifo_adr, ZPU_RAM_START + 0x3c,4);
+	fpeekstream8(twifd, (uint8_t *)&fifo_adr, ZPU_RAM_START + 0x3c,4);
 	fifo_adr = ntohl(fifo_adr);
 	if (fifo_adr == 0 || fifo_adr >= ZPU_RAM_SZ) {
 		fprintf(stderr, "ZPU connection refused\n");
 		close(twifd);
-		return 1;
+		return -1;
 	}
 	fifo_adr += ZPU_RAM_START;
 
@@ -119,7 +118,7 @@ int32_t zpu_fifo_init(int twifd, int flow_control)
 	 *   volatile uint8_t rxdat[ZPU_RXFIFO_SIZE];	// RX buffer
 	 * } fifo;
 	 */
-	fpeekstream8(twifd, (unsigned char *)&fifo_flags, fifo_adr, 4);
+	fpeekstream8(twifd, (uint8_t *)&fifo_flags, fifo_adr, 4);
 	fifo_flags = ntohl(fifo_flags);
 	if (flow_control) fifo_flags &= ~(1 << 25);
 	else fifo_flags |= (1 << 25);
@@ -250,7 +249,6 @@ size_t zpu_fifo_get(int twifd, uint8_t *buf, size_t size)
 size_t zpu_fifo_put(int twifd, uint8_t *buf, size_t size)
 {
 	size_t wrsz = 0;
-	int i;
 
 	assert(buf != NULL);
 

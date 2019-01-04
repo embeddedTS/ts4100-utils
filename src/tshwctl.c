@@ -57,7 +57,7 @@ int main(int argc, char **argv)
 	int opt_addr = 0;
 	int opt_info = 0;
 	int opt_poke = 0, opt_peek = 0;
-	int model;
+	uint16_t model;
 	uint8_t pokeval = 0;
 	int opt_input = -1;
 	int opt_output = -1;
@@ -133,7 +133,6 @@ int main(int argc, char **argv)
 	}
 
 	if(opt_info) {
-		uint16_t model;
 		uint8_t rev, tmp[3];
 		fpeekstream8(twifd, tmp, 304, 3);
 		model = tmp[1] | (tmp[0] << 8);

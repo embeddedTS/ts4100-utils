@@ -272,7 +272,7 @@ int main(int argc, char **argv)
 
 		irqfd = zpu_fifo_init(twifd, 1);
 		if (irqfd == -1) {
-			fprintf(stderr, "Unable to open I2C file!\n");
+			fprintf(stderr, "Unable to communicate with ZPU!\n");
 			return 1;
 		}
 

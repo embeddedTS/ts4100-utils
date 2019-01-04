@@ -8,3 +8,4 @@ uint8_t fpeek8(int twifd, uint16_t addr);
 void fpoke8(int twifd, uint16_t addr, uint8_t data);
 
 #endif
+

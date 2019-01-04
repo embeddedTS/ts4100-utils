@@ -68,7 +68,7 @@ int fpeekstream8(int twifd, uint8_t *data, uint16_t addr, int bytes)
 	msgs[1].addr = 0x28;
 	msgs[1].flags = I2C_M_RD;
 	msgs[1].len	= bytes;
-	msgs[1].buf	= data;
+	msgs[1].buf	= (char *)data;
 
     packets.msgs  = msgs;
     packets.nmsgs = 2;
@@ -84,7 +84,6 @@ int fpokestream8(int twifd, uint8_t *data, uint16_t addr, int size)
 {
 	struct i2c_rdwr_ioctl_data packets;
 	struct i2c_msg msg;
-	char busaddr[2];
 	uint8_t outdata[4096];
 
 	/* Linux only supports 4k transactions at a time, and we need
