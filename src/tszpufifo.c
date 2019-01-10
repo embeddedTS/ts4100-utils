@@ -1,8 +1,3 @@
-/* Goals:
- * API that can be used by customer applications as well as tszpuctl
- * Ability to either be a standalone linux pipe like XUARTs, or interactive
- *   ctl application to send and read strings as variables.
- */
 #include <assert.h>
 #include <arpa/inet.h>
 #include <stdio.h>
@@ -294,4 +289,75 @@ size_t zpu_fifo_put(int twifd, uint8_t *buf, size_t size)
 	zpu_rx_recalc(twifd);
 
 	return wrsz;
+}
+
+
+/* MUXBUS specific functions
+ *
+ * The following functions are simple abstractions for use with the MUXBUX
+ * interface bridge in the ZPU. They handle the packet structure for read/write
+ * operations, as well as the IRQ indicating operation complete.
+ */
+
+#define MB_READ		(1 << 0)
+#define MB_WRITE	(0 << 0)
+#define MB_16BIT	(1 << 1)
+#define MB_8BIT		(0 << 1)
+
+/* MUXBUS 16bit peek
+ *
+ * Internally handles the IRQ from the ZPU. Function only returns when data is
+ * fully read back from the ZPU FIFO.
+ */
+uint16_t zpu_muxbus_peek16(int twifd, uint16_t adr)
+{
+	char x = '?';
+	uint8_t buf[3];
+	fd_set efds;
+
+	buf[0] = (MB_READ | MB_16BIT);
+	buf[1] = (adr >> 8) && 0xFF;
+	buf[2] = (adr & 0xFF);
+
+	zpu_fifo_put(twifd, buf, 3);
+	FD_SET(irqfd, &efds);
+	/* TODO: Check the return value, maybe set a timeout? */
+	select(irqfd + 1, NULL, NULL, &efds, NULL);
+	if (FD_ISSET(irqfd, &efds)) {
+		lseek(irqfd, 0, 0);
+		read(irqfd, &x, 1);
+		assert (x == '0' || x == '1');
+	}
+	zpu_fifo_get(twifd, buf, 2);
+	return (uint16_t)(((buf[0] << 8) & 0xFF00) + (buf[1] & 0xFF));
+}
+
+/* MUXBUS 16bit poke
+ *
+ * Internally handles the IRQ from the ZPU. Function only returns when data is
+ * successfully written to the MUXBUS register.
+ */
+void zpu_muxbus_poke16(int twifd, uint16_t adr, uint16_t dat)
+{
+	char x = '?';
+	uint8_t buf[5];
+	fd_set efds;
+
+	buf[0] = (MB_WRITE | MB_16BIT);
+	buf[1] = (adr >> 8) && 0xFF;
+	buf[2] = (adr & 0xFF);
+	buf[3] = (dat >> 8) && 0xFF;
+	buf[4] = (dat & 0xFF);
+
+	zpu_fifo_put(twifd, buf, 5);
+	FD_SET(irqfd, &efds);
+	/* TODO: Check the return value, maybe set a timeout? */
+	select(irqfd + 1, NULL, NULL, &efds, NULL);
+	if (FD_ISSET(irqfd, &efds)) {
+		lseek(irqfd, 0, 0);
+		read(irqfd, &x, 1);
+		assert (x == '0' || x == '1');
+	}
+	/* Read required to clear IRQ from ZPU side */
+	zpu_fifo_get(twifd, buf, 2);
 }
