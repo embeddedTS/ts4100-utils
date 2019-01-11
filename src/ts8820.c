@@ -201,6 +201,9 @@ int ts8820_adc_acq(int hz, int n, unsigned short mask) {
         return written;
 }
 
+/* XXX: Does not support twiddling DIO from the CPU to set oversampling and
+ * voltage range.
+ */
 int ts8820_adc_sam(int hz, int n) {
         unsigned short *results;
         unsigned short status, ready;
@@ -255,7 +258,7 @@ int ts8820_adc_sam(int hz, int n) {
 
 void ts8820_dac_set(int dac, int mv) {
         
-        unsigned int adr;
+        unsigned short adr;
         unsigned short val;
         adr = 0xa0 + (dac-1)*2;
         val = (unsigned short)((mv*0xfff)/10375) | 0x8000;
