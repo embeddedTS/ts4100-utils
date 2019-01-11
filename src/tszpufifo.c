@@ -316,7 +316,7 @@ uint16_t zpu_muxbus_peek16(int twifd, uint16_t adr)
 	fd_set efds;
 
 	buf[0] = (MB_READ | MB_16BIT);
-	buf[1] = (adr >> 8) && 0xFF;
+	buf[1] = (adr >> 8) & 0xFF;
 	buf[2] = (adr & 0xFF);
 
 	zpu_fifo_put(twifd, buf, 3);
@@ -344,9 +344,9 @@ void zpu_muxbus_poke16(int twifd, uint16_t adr, uint16_t dat)
 	fd_set efds;
 
 	buf[0] = (MB_WRITE | MB_16BIT);
-	buf[1] = (adr >> 8) && 0xFF;
+	buf[1] = (adr >> 8) & 0xFF;
 	buf[2] = (adr & 0xFF);
-	buf[3] = (dat >> 8) && 0xFF;
+	buf[3] = (dat >> 8) & 0xFF;
 	buf[4] = (dat & 0xFF);
 
 	zpu_fifo_put(twifd, buf, 5);
