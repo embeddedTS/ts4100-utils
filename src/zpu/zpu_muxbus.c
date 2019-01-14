@@ -355,9 +355,8 @@ void initfifo(void)
 
 void initmuxbusio(void)
 {
-	/* TODO: Set up configurable clock in FPGA
-	 * Set this function to enable 12.5 MHz on 4100 FPGA DIO_3
-	 */
+	/* Enable 12.5 MHz clock on DIO_03 pin via FPGA reg 'd87 */
+	O_REG2 |= (1 << 23);
 
 	/* Set all AD pins to input for now */
 	OE_REG1 &= ~(0xF8000000);
