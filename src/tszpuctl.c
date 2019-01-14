@@ -107,6 +107,7 @@ int main(int argc, char **argv)
 	char *compile_path = 0;
 	char *opt_load = 0;
 	int model;
+	uint8_t rev;
 	uint8_t buf[8192];
 
 	static struct option long_options[] = {
@@ -125,6 +126,11 @@ int main(int argc, char **argv)
 		return 1;
 	}
 
+	if(twifd == -1) {
+		perror("Can't open FPGA I2C bus");
+		return 1;
+	}
+
 	twifd = fpga_init();
 	model = get_model();
 	if(model != 0x4100) {
@@ -132,8 +138,10 @@ int main(int argc, char **argv)
 		return 1;
 	}
 
-	if(twifd == -1) {
-		perror("Can't open FPGA I2C bus");
+	rev = fpeek8(twifd, 306);
+	if (rev < 0xA) {
+		fprintf(stderr, "TS-4100 FPGA must be rev 0xA or higher!\n");
+		fprintf(stderr, "Current rev is 0x%X\n", rev);
 		return 1;
 	}
 
