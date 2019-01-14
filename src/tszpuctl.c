@@ -1,3 +1,5 @@
+/* SPDX-License-Identifier: BSD-2-Clause */
+
 #include <assert.h>
 #include <arpa/inet.h>
 #include <stdio.h>
