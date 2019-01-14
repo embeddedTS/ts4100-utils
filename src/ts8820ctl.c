@@ -31,6 +31,9 @@
 
 static int twifd;
 
+const char copyright[] = "Copyright (c) Technologic Systems - " __DATE__ " - "
+  GITCOMMIT;
+
 int get_model()
 {
 	FILE *proc;
@@ -49,7 +52,9 @@ int get_model()
 
 
 static void usage(char **argv) {
-	fprintf(stderr, "Usage: %s [OPTION] ...\n"
+	fprintf(stderr,
+	  "%s\n\n"
+	  "Usage: %s [OPTION] ...\n"
 	  "Technologic Systems TS-8820 FPGA manipulation\n"
 	  "\n"
 	  "General options:\n"
@@ -78,7 +83,7 @@ static void usage(char **argv) {
           "H-bridge arguments: 1=run forward; 2=run backward; 0=disable.\n"
           "To \"free-wheel\" an H-bridge, set its PWM to 0%% and leave it enabled.\n"
           "A disabled H-bridge will have high-impedance on both sides.\n\n",
-	  argv[0]
+	  copyright, argv[0]
 	);
 }
 

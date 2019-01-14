@@ -24,6 +24,9 @@
 
 static int twifd;
 
+const char copyright[] = "Copyright (c) Technologic Systems - " __DATE__ " - "
+  GITCOMMIT;
+
 static struct termios tios_orig;
 static struct sigaction sa;
 volatile uint32_t tick;
@@ -54,6 +57,7 @@ int get_model()
 
 void usage(char **argv) {
 	fprintf(stderr,
+	  "%s\n\n"
 	  "Usage: %s [OPTIONS] ...\n"
 	  "Technologic Systems ZPU Utility\n"
 	  "\n"
@@ -66,7 +70,7 @@ void usage(char **argv) {
 	  "  -r, --reset <1|0>  Reset ZPU (1 off, 0 on)\n"
 	  "  -h, --help         This message\n"
 	  "\n",
-	  argv[0]
+	  copyright, argv[0]
 	);
 }
 

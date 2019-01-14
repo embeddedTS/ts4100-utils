@@ -14,6 +14,9 @@
 
 #include "i2c-dev.h"
 
+const char copyright[] = "Copyright (c) Technologic Systems - " __DATE__ " - "
+  GITCOMMIT;
+
 char *model = 0;
 
 char *get_model()
@@ -120,7 +123,9 @@ void do_info(int twifd)
 }
 
 static void usage(char **argv) {
-	fprintf(stderr, "Usage: %s [OPTION] ...\n"
+	fprintf(stderr,
+	  "%s\n\n"
+	  "Usage: %s [OPTION] ...\n"
 	  "Technologic Systems Microcontroller Access\n"
 	  "\n"	
 	  "  -h, --help           This message\n"
@@ -129,7 +134,7 @@ static void usage(char **argv) {
 	  "  -e, --tssiloon       Enable charging of TS-SILO supercaps\n"
 	  "  -d, --tssilooff      Disable charging of TS-SILO supercaps\n"
 	  "    All values are returned in mV\n\n",
-	  argv[0]
+	  copyright, argv[0]
 	);
 }
 

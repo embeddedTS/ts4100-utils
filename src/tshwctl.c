@@ -15,6 +15,9 @@
 
 #include "fpga.h"
 
+const char copyright[] = "Copyright (c) Technologic Systems - " __DATE__ " - "
+  GITCOMMIT;
+
 static int twifd;
 
 int get_model()
@@ -35,6 +38,7 @@ int get_model()
 
 void usage(char **argv) {
 	fprintf(stderr,
+		"%s\n\n"
 		"Usage: %s [OPTIONS] ...\n"
 		"Technologic Systems I2C FPGA Utility\n"
 		"\n"
@@ -46,7 +50,7 @@ void usage(char **argv) {
 		"  -i, --info             Print fpga rev and board model id\n"
 		"  -h, --help             This message\n"
 		"\n",
-		argv[0]
+		copyright, argv[0]
 	);
 }
 

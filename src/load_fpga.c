@@ -9,6 +9,9 @@
 #include "ispvm.h"
 #include "load_fpga-ts4100.h"
 
+const char copyright[] = "Copyright (c) Technologic Systems - " __DATE__ " - "
+  GITCOMMIT;
+
 char *get_model()
 {
 	FILE *proc;
@@ -50,6 +53,7 @@ int main(int argc, char **argv)
 	  "option error", "crc verification error" };
 
 	if(argc != 2 && argc != 3) {
+		printf("%s\n\n", copyright);
 		printf("Usage: %s file.vme <reboot>\n", argv[0]);
 		printf("\tif reboot is specified it will reset the cpu after\n");
 		return 1;
