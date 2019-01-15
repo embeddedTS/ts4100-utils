@@ -56,6 +56,8 @@ POST_SCRIPTS=""
 #   Set up /etc/resolv.conf as symlink to systemd
 #   Remove root passwd if any, handles passwd and shadow
 #   Set up /etc/hosts from /etc/hostname, use Debian defaults otherwise
+#   If /boot/Image exists, pull linux version from this file, and remove all
+#     /lib/modules/ dirs that are NOT matching this version
 #   Run any board specific scripts in PREP_SCRIPTS
 #   Create /md5sums.txt of all of the md5sums of files in rootfs
 #   Create tarball of filesystem
@@ -209,6 +211,16 @@ cat mount_point/etc/hostname >> mount_point/etc/hosts
 echo "::1		localhost ip6-localhost ip6-loopback" >> mount_point/etc/hosts
 echo "ff02::1		ip6-allnodes" >> mount_point/etc/hosts
 echo "ff02::2		ip6-allrouters"  >> mount_point/etc/hosts
+
+if [ -e mount_point/boot/Image ]; then
+  verstring=$(strings mount_point/boot/Image |grep "Linux version"| awk '{print $3}')
+  echo "Removing all modules NOT for kernel \"${verstring}\""
+  find mount_point/lib/modules/ -mindepth 1 -maxdepth 1 -type d -not -name ${verstring} -exec rm -rf {} \;
+  echo "Removing /boot/Image since it is not used in production"
+  rm mount_point/boot/Image
+else
+  echo "/boot/Image not found, leaving modules directories in place!"
+fi
 
 echo "Calling Prep scripts"
 for I in $PREP_SCRIPTS; do ./$I $image_file; done
