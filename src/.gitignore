@@ -1,0 +1,5 @@
+load_fpga
+ts8820ctl
+tshwctl
+tsmicroctl
+tszpuctl
