@@ -88,10 +88,11 @@ int zpucompile(char *infile, char *outfile)
 	  "zpu-elf-gcc -abel -Os -Wl,-relax -Wl,-gc-sections %s -o %s",
 	  infile, tempfile);
 	ret = system(cmd);
-	if(ret) return ret;
+	if(ret) goto out;
 
 	sprintf(cmd, "zpu-elf-objcopy -S -O binary %s %s", tempfile, outfile);
 	ret = system(cmd);
+out:
 	unlink(tempfile);
 	return ret;
 }
@@ -208,13 +209,21 @@ int main(int argc, char **argv)
 		 * we assume it's a compiled file */
 		if(strstr(opt_load, ".c")) {
 			mkstemp(tempfile);
-			zpucompile(opt_load, tempfile);
+			if (zpucompile(opt_load, tempfile)) {
+				unlink(tempfile);
+				return 1;
+			}
 			binfile = tempfile;
 		} else {
 			binfile = opt_load;
 		}
 
 		f = fopen(binfile, "rb");
+		if (f == NULL) {
+			perror(binfile);
+			unlink(tempfile);
+			return 1;
+		}
 		fseek(f, 0, SEEK_END);
 		sz = ftell(f);
 		if(sz > 8192){
