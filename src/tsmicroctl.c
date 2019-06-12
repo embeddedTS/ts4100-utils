@@ -19,23 +19,22 @@
 const char copyright[] = "Copyright (c) Technologic Systems - " __DATE__ " - "
   GITCOMMIT;
 
-char *model = 0;
+int model = 0;
 
-char *get_model()
+int get_model()
 {
 	FILE *proc;
 	char mdl[256];
 	char *ptr;
-	int sz;
 
 	proc = fopen("/proc/device-tree/model", "r");
 	if (!proc) {
-		perror("model");
+		perror("Unable to open model file");
 		return 0;
 	}
-	sz = fread(mdl, 256, 1, proc);
+	fread(mdl, 256, 1, proc);
 	ptr = strstr(mdl, "TS-");
-	return strndup(ptr, sz - (mdl - ptr));
+	return strtoul(ptr+3, NULL, 16);
 }
 
 int silabs_init()
@@ -98,30 +97,28 @@ void do_info(int twifd)
 	memset(data, 0, sizeof(uint16_t));
 	sread(twifd, data);
 
-	if(strstr(model, "4100")) {
-		/* Byte order is P1.2-P1.4, P2.0-P2.7, temp sensor */
-		printf("REVISION=%d\n", ((data[8] >> 8) & 0xF));
-		printf("AN_SUP_CAP_1=%d\n", sscale(data[0]));
-		printf("AN_SUP_CAP_2=%d\n", rscale(data[1], 20, 20));
-		
-		pct = ((data[1]*100/237));
-		if (pct > 311) {
-			pct = pct - 311;
-			if (pct > 100) pct = 100;
-		} else {
-			pct = 0;
-		} 
-		printf("SUPERCAP_PCT=%d\n", pct > 100 ? 100 : pct);
-		printf("AN_MAIN_4P7V=%d\n", rscale(data[2], 20, 20));
-		printf("MAIN_5V=%d\n", rscale(data[3], 536, 422));
-		printf("USB_OTG_5V=%d\n", rscale(data[4], 536, 422));
-		printf("V3P3=%d\n", rscale(data[5], 422, 422));
-		printf("RAM_1P35V=%d\n", sscale(data[6]));
-		printf("VDD_6UL_CORE=%d\n", sscale(data[9]));
-		printf("AN_CHRG=%d\n", rscale(data[10], 422, 422));
-		printf("VDD_SOC_CAP=%d\n", sscale(data[11]));
-		printf("VDD_ARM_CAP=%d\n", sscale(data[12]));
+	/* Byte order is P1.2-P1.4, P2.0-P2.7, temp sensor */
+	printf("REVISION=%d\n", ((data[8] >> 8) & 0xF));
+	printf("AN_SUP_CAP_1=%d\n", sscale(data[0]));
+	printf("AN_SUP_CAP_2=%d\n", rscale(data[1], 20, 20));
+
+	pct = ((data[1]*100/237));
+	if (pct > 311) {
+		pct = pct - 311;
+		if (pct > 100) pct = 100;
+	} else {
+		pct = 0;
 	}
+	printf("SUPERCAP_PCT=%d\n", pct > 100 ? 100 : pct);
+	printf("AN_MAIN_4P7V=%d\n", rscale(data[2], 20, 20));
+	printf("MAIN_5V=%d\n", rscale(data[3], 536, 422));
+	printf("USB_OTG_5V=%d\n", rscale(data[4], 536, 422));
+	printf("V3P3=%d\n", rscale(data[5], 422, 422));
+	printf("RAM_1P35V=%d\n", sscale(data[6]));
+	printf("VDD_6UL_CORE=%d\n", sscale(data[9]));
+	printf("AN_CHRG=%d\n", rscale(data[10], 422, 422));
+	printf("VDD_SOC_CAP=%d\n", sscale(data[11]));
+	printf("VDD_ARM_CAP=%d\n", sscale(data[12]));
 }
 
 static void usage(char **argv) {
@@ -132,10 +129,11 @@ static void usage(char **argv) {
 	  "\n"	
 	  "  -h, --help           This message\n"
 	  "  -i, --info           Read all Silabs ADC values\n"
+	  "                         All values are returned in mV\n"
 	  "  -s, --sleep <sec>    Enter sleep mode for <sec> seconds\n"
 	  "  -e, --tssiloon       Enable charging of TS-SILO supercaps\n"
 	  "  -d, --tssilooff      Disable charging of TS-SILO supercaps\n"
-	  "    All values are returned in mV\n\n",
+	  "\n",
 	  copyright, argv[0]
 	);
 }
@@ -143,7 +141,8 @@ static void usage(char **argv) {
 int main(int argc, char **argv)
 {
 	int c;
-	int twifd, opt_supercap = 0;
+	int twifd;
+	int opt_supercap = 0, opt_info = 0, opt_sleep = 0, opt_sleepsec = 0;
 
 	static struct option long_options[] = {
 	  { "info", 0, 0, 'i' },
@@ -156,27 +155,30 @@ int main(int argc, char **argv)
 
 	if(argc == 1) {
 		usage(argv);
-		return(1);
+		return 1;
 	}
 
 	model = get_model();
-	if(!strstr(model, "4100")) {
-		fprintf(stderr, "Not supported on model \"%s\"\n", model);
+	switch(model) {
+	  case 0x4100:
+		break;
+	  default:
+		fprintf(stderr, "Unsupported model TS-%X\n", model);
 		return 1;
 	}
 
 	twifd = silabs_init();
-	if(twifd == -1)
-		return 1;
+	if(twifd == -1) return 1;
 
 	while((c = getopt_long(argc, argv, "edis:h",
 	  long_options, NULL)) != -1) {
 		switch (c) {
 		  case 'i':
-			do_info(twifd);
+			opt_info = 1;
 			break;
 		  case 's':
-			do_sleep(twifd, atoi(optarg));
+			opt_sleep = 1;
+			opt_sleepsec = atoi(optarg);
 			break;
 		  case 'e':
 			opt_supercap = 1;
@@ -190,7 +192,11 @@ int main(int argc, char **argv)
 		}
 	}
 
-	if(opt_supercap) {
+	if (opt_info) do_info(twifd);
+
+	if (opt_sleep) do_sleep(twifd, opt_sleepsec);
+
+	if (opt_supercap) {
 		unsigned char dat[1] = {(opt_supercap & 0x1)};
 		write(twifd, dat, 1);
 	}
