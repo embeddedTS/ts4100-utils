@@ -1,7 +1,7 @@
 #ifndef __FPGA_H_
 #define __FPGA_H_
 
-int fpga_init();
+int fpga_init(const char *i2c_bus, uint8_t addr);
 int fpeekstream8(int twifd,  uint8_t *data, uint16_t addr, int size);
 int fpokestream8(int twifd, uint8_t *data, uint16_t addr, int size);
 uint8_t fpeek8(int twifd, uint16_t addr);

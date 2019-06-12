@@ -99,7 +99,7 @@ int main(int argc, char **argv) {
 	  { 0, 0, 0, 0 }
 	};
 	
-        twifd = fpga_init();
+        twifd = fpga_init("/dev/i2c-2", 0x28);
         model = get_model();
         if(model != 0x4100) {
                 fprintf(stderr, "Unsupported model 0x%X\n", model);

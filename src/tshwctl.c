@@ -35,7 +35,7 @@ int get_model()
 	}
 	fread(mdl, 256, 1, proc);
 	ptr = strstr(mdl, "TS-");
-	return strtoull(ptr+3, NULL, 16);
+	return strtoul(ptr+3, NULL, 16);
 }
 
 void usage(char **argv) {
@@ -45,10 +45,13 @@ void usage(char **argv) {
 		"Technologic Systems I2C FPGA Utility\n"
 		"\n"
 		"  -a, --addr <address>   Sets up the address for a peek/poke\n"
-		"  -w, --poke <value>     Writes the value to the specified address\n"
+		"  -w, --poke <value>     Writes the value to the specified "
+		  "address\n"
 		"  -r, --peek             Reads from the specified address\n"
-		"  -o, --out=<IO>         FPGA pin to output signal from specified input\n"
-		"  -j, --in=<IO>          FPGA input that will be routed to the output\n"
+		"  -o, --out=<IO>         FPGA pin to output signal from "
+		  "specified input\n"
+		"  -j, --in=<IO>          FPGA input that will be routed to "
+		  "the output\n"
 		"  -i, --info             Print fpga rev and board model id\n"
 		"  -h, --help             This message\n"
 		"\n",
@@ -79,36 +82,39 @@ int main(int argc, char **argv)
 		{ 0, 0, 0, 0 }
 	};
 
-	twifd = fpga_init();
+	twifd = fpga_init("/dev/i2c-2", 0x28);
 
 	if(twifd == -1) {
 		perror("Can't open FPGA I2C bus");
 		return 1;
 	}
 
-	while((c = getopt_long(argc, argv, "a:rw:j:o:i", long_options, NULL)) != -1) {
+	while((c = getopt_long(argc, argv,
+	  "a:rw:j:o:i",
+	  long_options, NULL)) != -1) {
 		switch(c) {
-		case 'a':
+		  case 'a':
 			opt_addr = 1;
 			addr = strtoull(optarg, NULL, 0);
 			break;
-		case 'w':
+		  case 'w':
 			opt_poke = 1;
 			pokeval = strtoull(optarg, NULL, 0);
 			break;
-		case 'j':
+		  case 'j':
 			opt_input = strtoull(optarg, NULL, 0);
 			break;
-		case 'o':
+		  case 'o':
 			opt_output = strtoull(optarg, NULL, 0);
 			break;
-		case 'r':
+		  case 'r':
 			opt_peek = 1;
 			break;
-		case 'i':
+		  case 'i':
 			opt_info = 1;
 			break;
-		default:
+		  case 'h':
+		  default:
 			usage(argv);
 		}
 	}
