@@ -1,6 +1,6 @@
 GITCOMMIT:= $(shell git describe --abbrev=12 --dirty --always)
 
-tshwctl_SOURCES = tshwctl.c fpga.c
+tshwctl_SOURCES = tshwctl.c fpga.c eval_cmdline.c
 tshwctl_LDFLAGS = -lm
 tshwctl_CPPFLAGS = -Wall -DGITCOMMIT="\"${GITCOMMIT}\""
 

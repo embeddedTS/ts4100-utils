@@ -9,6 +9,7 @@
 #include <stdlib.h>
 #include <unistd.h>
 
+#include "eval_cmdline.h"
 #include "fpga.h"
 
 const char copyright[] = "Copyright (c) Technologic Systems - " __DATE__ " - "
@@ -45,7 +46,7 @@ void usage(char **argv) {
 	    "specified input\n"
 	  "  -j, --in <I/O>         FPGA input that will be routed to "
 	    "the output\n"
-	  "  -i, --info             Print fpga rev and board model id\n"
+	  "  -i, --info             Print information about the device\n"
 	  "  -h, --help             This message\n"
 	  "\n",
 	  copyright, argv[0]
@@ -154,12 +155,16 @@ int main(int argc, char **argv)
 	}
 
 	if(opt_info) {
+		eval_cmd_init();
 		fpeekstream8(twifd, tmp, 304, 3);
 		model = tmp[1] | (tmp[0] << 8);
 		rev = tmp[2];
 
 		printf("model=0x%X\n", model);
 		printf("fpgarev=%d\n", rev);
+		printf("opts=0x%X\n", fpeek8(twifd, 308) & 0x1F);
+		printf("bbid=0x%X\n", eval_cmd("bbid"));
+		printf("bbrev=0x%X\n", eval_cmd("bbrev"));
 	}
 
 	close(twifd);
