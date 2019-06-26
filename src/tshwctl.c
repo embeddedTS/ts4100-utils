@@ -74,6 +74,11 @@ int main(int argc, char **argv)
 	  { NULL,      no_argument,       NULL,  0  }
 	};
 
+	if(argc == 1) {
+		usage(argv);
+		return 1;
+	}
+
 	while((c = getopt_long(argc, argv,
 	  "a:rw:cgsqj:o:ih",
 	  long_options, NULL)) != -1) {
