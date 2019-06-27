@@ -79,11 +79,7 @@ uint16_t inline rscale(uint16_t data, uint16_t r1, uint16_t r2)
 void do_sleep(int twifd, int seconds)
 {
 	unsigned char dat[4] = {0};
-	int opt_sleepmode = 1; // Legacy mode on new boards
-	int opt_resetswitchwkup = 1;
 
-	dat[0]=(0x1 | (opt_resetswitchwkup << 1) |
-	  ((opt_sleepmode-1) << 4) | 1 << 6);
 	dat[3] = (seconds & 0xff);
 	dat[2] = ((seconds >> 8) & 0xff);
 	dat[1] = ((seconds >> 16) & 0xff);
