@@ -91,3 +91,9 @@ void ts8820_sram_write(int);
  * static RAM and writes them to stdout.
  */
 void ts8820_sram_read(int);
+
+/* ts8820_read/write
+ * Do an arbitrary single register read or write of TS-8820 FPGA space
+ */
+unsigned short ts8820_read(unsigned short adr);
+void ts8820_write(unsigned short adr, unsigned short val);

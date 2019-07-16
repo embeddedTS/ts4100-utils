@@ -58,6 +58,9 @@ static void usage(char **argv) {
 	  "  -c, --counter=<in>     Read pulse counter for digital in (1-14)\n"
 	  "  -D, --setdio=<val>     Set DIO output to val\n"
 	  "  -G, --getdio           Get DIO input\n"
+	  "  -R, --read             Read 16-bit register at <addr>\n"
+	  "  -W, --write=<val>      Write 16-bit <val> to register at <addr>\n"
+	  "  -A, --address=<addr>   TS-8820 FPGA address to read or write\n"
 	  "  -h, --help             This help\n\n"
 	  "PWMs 1-6 feed digital outputs; PWMs 7 and 8 feed H-bridges.\n"
 	  "The --pwm option overrides DIO settings and makes the pin a PWM.\n"
@@ -79,6 +82,7 @@ int main(int argc, char **argv) {
 	int opt_pwm = 0, opt_prescalar = 0, opt_hb = 0, opt_hbarg = 1;
 	int opt_DO = 0, opt_DOarg = 0, opt_DI = 0;
 	int opt_counter = 0, opt_counterarg = 0;
+	int opt_address = -1, opt_read = 0, opt_write = 0, opt_writearg = 0;
 	static struct option long_options[] = {
 	  { "sample", 1, 0, 's' },
 	  { "acquire", 1, 0, 'a' },
@@ -93,8 +97,9 @@ int main(int argc, char **argv) {
 	  { "counter", 1, 0, 'c' },
 	  { "setdio", 1, 0, 'D'},
 	  { "getdio", 0, 0, 'G'},
-	  { "read", 1, 0, 'R' },
+	  { "read", 0, 0, 'R' },
 	  { "write", 1, 0, 'W' },
+	  { "address", 1, 0, 'A' },
 	  { "help", 0, 0, 'h' },
 	  { 0, 0, 0, 0 }
 	};
@@ -105,7 +110,7 @@ int main(int argc, char **argv) {
 	}
 
 	while((c = getopt_long(argc, argv,
-	  "c:p:P:1:2:r:v:m:hs:a:d:D:GR:W:", long_options, NULL)) != -1) {
+	  "c:p:P:1:2:r:v:m:hs:a:d:D:GRW:A:", long_options, NULL)) != -1) {
 		switch (c) {
 		  case 'r':
 			opt_rate = strtoul(optarg, NULL, 0);
@@ -149,6 +154,16 @@ int main(int argc, char **argv) {
 		  case 'c':
 			opt_counter = 1;
 			opt_counterarg = strtoul(optarg, NULL, 0);
+			break;
+		  case 'R':
+			opt_read = 1;
+			break;
+		  case 'W':
+			opt_write = 1;
+			opt_writearg = strtoul(optarg, NULL, 0);
+			break;
+		  case 'A':
+			opt_address = strtoul(optarg, NULL, 0);
 			break;
 		  case 'h':
 		  default:
@@ -212,6 +227,18 @@ int main(int argc, char **argv) {
 			ts8820_hb_set(opt_hb, opt_hbarg - 1);
 		} else {
 			ts8820_hb_disable(opt_hb);
+		}
+	}
+
+	if (opt_read) {
+		if (opt_address >= 0 && opt_address <= 0xA6) {
+			printf("0x%X\n", ts8820_read(opt_address));
+		}
+	}
+
+	if (opt_write) {
+		if (opt_address >= 0 && opt_address <= 0xA6) {
+			ts8820_write(opt_address, opt_writearg);
 		}
 	}
 

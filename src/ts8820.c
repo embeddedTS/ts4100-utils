@@ -284,3 +284,13 @@ void ts8820_do_set(unsigned int lval) {
 unsigned int ts8820_di_get(void) {
         return peek16(0x4) & 0x3fff;
 }
+
+unsigned short ts8820_read(unsigned short adr)
+{
+	return peek16(adr);
+}
+
+void ts8820_write(unsigned short adr, unsigned short val)
+{
+	poke16(adr, val);
+}
