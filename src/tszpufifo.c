@@ -96,6 +96,7 @@ int32_t zpu_fifo_init(int twifd, int flow_control)
 	fifo_adr = ntohl(fifo_adr);
 	if (fifo_adr == 0 || fifo_adr >= ZPU_RAM_SZ) {
 		fprintf(stderr, "ZPU connection refused\n");
+		fprintf(stderr, "Is the ZPU application loaded and running?\n");
 		close(twifd);
 		return -1;
 	}
