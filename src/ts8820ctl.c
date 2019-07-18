@@ -20,6 +20,15 @@ static int twifd;
 const char copyright[] = "Copyright (c) Technologic Systems - " __DATE__ " - "
   GITCOMMIT;
 
+/* Enum for Hbridge settings */
+enum hb_state {
+	invalid = -1,
+	disable = 0,
+	brake,
+	fwd,
+	rev
+};
+
 int get_model()
 {
 	FILE *proc;
@@ -53,23 +62,34 @@ static void usage(char **argv) {
 	  "  -v, --mvolts=<mvolts>  DAC/PWM voltage in mV (0-10000)\n"
 	  "  -p, --pwm=<out>        Put PWM on digital out (1-6)\n"
 	  "  -P, --prescalar=<val>  PWM freq will be (12207/(2^val)) Hz (0-7)\n"
-	  "  -1, --hbridge1=<val>   Control H-bridge #1 (0/1/2, default 1)\n"
-	  "  -2, --hbridge2=<val>   Control H-bridge #2 (0/1/2, default 1)\n"
-	  "  -c, --counter=<in>     Read pulse counter for digital in (1-14)\n"
-	  "  -D, --setdio=<val>     Set DIO output to val\n"
-	  "  -G, --getdio           Get DIO input\n"
 	  "  -R, --read             Read 16-bit register at <addr>\n"
 	  "  -W, --write=<val>      Write 16-bit <val> to register at <addr>\n"
 	  "  -A, --address=<addr>   TS-8820 FPGA address to read or write\n"
 	  "  -h, --help             This help\n\n"
+
+	  "H Bridge Control:\n"
+	  "  -1, --hbridge1         Control H Bridge #1 with following flags\n"
+	  "  -2, --hbridge2         Control H Bridge #2 with following flags\n"
+	  "  -I, --disable          Disable selected H Bridge (same as coast)\n"
+	  "  -C, --coast            Set selected H Bridge to coast\n"
+	  "  -B, --brake            Set selected H Bridge to brake\n"
+	  "  -F, --fwd=<duty>       Drive sel. H Bridge fwd with <duty> cycle\n"
+	  "  -E, --rev=<duty>       Drive sel. H Bridge rev with <duty> cycle\n"
+	  "When moving fwd or rev, <duty> is 0 - 1000, where 1000 is 100%%.\n"
+	  "The --prescalar flag controls H Bridge PWM drive frequency. When\n"
+	  "unspecified, defaults to 12207 Hz.\n"
+	  "Only the last --hbridge* option on the command line will be\n"
+	  "affected by the specified control flags\n\n"
+
+	  "DIO control:\n"
+	  "  -c, --counter=<in>     Read pulse counter for digital in (1-14)\n"
+	  "  -D, --setdio=<val>     Set DIO output to val\n"
+	  "  -G, --getdio           Get DIO input\n"
+
 	  "PWMs 1-6 feed digital outputs; PWMs 7 and 8 feed H-bridges.\n"
 	  "The --pwm option overrides DIO settings and makes the pin a PWM.\n"
 	  "The --pwm=<out> --mvolts=10000 gives a 100%% duty cycle.\n"
-	  "To revert an output back to DIO, use --mvolts=-1.\n"
-	  "H-bridge arguments: 1=run forward; 2=run backward; 0=disable.\n"
-	  "To \"free-wheel\" an H-bridge, set its PWM to 0%% and leave it "
-	    "enabled.\n"
-	  "A disabled H-bridge will have high-impedance on both sides.\n\n",
+	  "To revert an output back to DIO, use --mvolts=-1.\n",
 	  copyright, argv[0]
 	);
 }
@@ -79,29 +99,36 @@ int main(int argc, char **argv) {
 	int model;
 	int opt_sample = 0, opt_acquire = 0, opt_setdac = 0;
 	int opt_rate = 10000, opt_mask = 0xffff, opt_mvolts = 0;
-	int opt_pwm = 0, opt_prescalar = 0, opt_hb = 0, opt_hbarg = 1;
+	int opt_pwm = 0, opt_prescalar = 0;
+	/* H Bridge specific */
+	int opt_hb = 0, opt_hbset = -1, opt_hbduty = 0;
 	int opt_DO = 0, opt_DOarg = 0, opt_DI = 0;
 	int opt_counter = 0, opt_counterarg = 0;
 	int opt_address = -1, opt_read = 0, opt_write = 0, opt_writearg = 0;
 	static struct option long_options[] = {
-	  { "sample", 1, 0, 's' },
-	  { "acquire", 1, 0, 'a' },
-	  { "rate", 1, 0, 'r' },
-	  { "mask", 1, 0, 'm' },
-	  { "setdac", 1, 0, 'd' },
-	  { "mvolts", 1, 0, 'v' },
-	  { "pwm", 1, 0, 'p' },
-	  { "prescalar", 1, 0, 'P' },
-	  { "hbridge1", 1, 0, '1' },
-	  { "hbridge2", 1, 0, '2' },
-	  { "counter", 1, 0, 'c' },
-	  { "setdio", 1, 0, 'D'},
-	  { "getdio", 0, 0, 'G'},
-	  { "read", 0, 0, 'R' },
-	  { "write", 1, 0, 'W' },
-	  { "address", 1, 0, 'A' },
-	  { "help", 0, 0, 'h' },
-	  { 0, 0, 0, 0 }
+	  { "sample",	required_argument,	0, 's' },
+	  { "acquire",	required_argument,	0, 'a' },
+	  { "rate",	required_argument,	0, 'r' },
+	  { "mask",	required_argument,	0, 'm' },
+	  { "setdac",	required_argument,	0, 'd' },
+	  { "mvolts",	required_argument,	0, 'v' },
+	  { "pwm",	required_argument,	0, 'p' },
+	  { "prescalar",required_argument,	0, 'P' },
+	  { "hbridge1",	no_argument,		0, '1' },
+	  { "hbridge2",	no_argument,		0, '2' },
+	  { "disable",	no_argument,		0, 'I' },
+	  { "coast",	no_argument,		0, 'C' },
+	  { "brake",	no_argument,		0, 'B' },
+	  { "fwd",	required_argument,	0, 'F' },
+	  { "rev",	required_argument,	0, 'E' },
+	  { "counter",	required_argument,	0, 'c' },
+	  { "setdio",	required_argument,	0, 'D' },
+	  { "getdio",	no_argument,		0, 'G' },
+	  { "read",	no_argument,		0, 'R' },
+	  { "write",	required_argument,	0, 'W' },
+	  { "address",	required_argument,	0, 'A' },
+	  { "help",	no_argument,		0, 'h' },
+	  { 0,		0,			0,  0 }
 	};
 
 	if (argc == 1) {
@@ -110,7 +137,7 @@ int main(int argc, char **argv) {
 	}
 
 	while((c = getopt_long(argc, argv,
-	  "c:p:P:1:2:r:v:m:hs:a:d:D:GRW:A:", long_options, NULL)) != -1) {
+	  "c:p:P:12ICBF:E:r:v:m:hs:a:d:D:GRW:A:", long_options, NULL)) != -1) {
 		switch (c) {
 		  case 'r':
 			opt_rate = strtoul(optarg, NULL, 0);
@@ -138,11 +165,28 @@ int main(int argc, char **argv) {
 			break;
 		  case '1':
 			opt_hb = 1;
-			opt_hbarg = strtoul(optarg, NULL, 0);
 			break;
 		  case '2':
 			opt_hb = 2;
-			opt_hbarg = strtoul(optarg, NULL, 0);
+			break;
+		  case 'I':
+		  case 'C':
+			opt_hbset = disable;
+			break;
+		  case 'B':
+			opt_hbset = brake;
+			break;
+		  case 'F':
+			opt_hbset = fwd;
+			opt_hbduty = strtoul(optarg, NULL, 0);
+			if (opt_hbduty < 0) opt_hbduty = 0;
+			if (opt_hbduty > 1000) opt_hbduty = 1000;
+			break;
+		  case 'E':
+			opt_hbset = rev;
+			opt_hbduty = strtoul(optarg, NULL, 0);
+			if (opt_hbduty < 0) opt_hbduty = 0;
+			if (opt_hbduty > 1000) opt_hbduty = 1000;
 			break;
 		  case 'D':
 			opt_DO = 1;
@@ -212,7 +256,7 @@ int main(int argc, char **argv) {
 	}
 
 	if (opt_pwm) {
-		if (opt_pwm > 0 && opt_pwm <= 8) {
+		if (opt_pwm > 0 && opt_pwm <= 6) {
 			if (opt_mvolts < 0) {
 				ts8820_pwm_disable(opt_pwm);
 			} else {
@@ -222,11 +266,49 @@ int main(int argc, char **argv) {
 		}
 	}
 
+	/* Top of file has an enum of H Bridge states that only this ctl app
+	 * cares about. Therefore setting fwd and rev from here still uses magic
+	 * numbers to the ts8820 API. The goal is to cause as little disruption
+	 * as possible for the API, but give the ctl a much cleaner and easier
+	 * to understand interface.
+	 */
 	if (opt_hb) {
-		if (opt_hbarg > 0) {
-			ts8820_hb_set(opt_hb, opt_hbarg - 1);
-		} else {
+		switch(opt_hbset) {
+		  case disable:
+			/* Disable and then set PWM output to 0. Not necessary
+			 *   as "disable" by itself will tri-state the bridge
+			 *   outputs, but it's here for clarity sake.
+			 * H Bridge PWM channels are 7 and 8.
+			 */
 			ts8820_hb_disable(opt_hb);
+			ts8820_pwm_set((opt_hb + 6), opt_prescalar, 0);
+			break;
+		  case brake:
+			/* Both sides of the motor will by default set to
+			 *   GND when braking due to setting the PWM output to
+			 *   0% duty cycle
+			 * Still set the output direction to a known value,
+			 *   doing so un-disables the H Bridge to allow braking
+			 *   from a coast/disabled state.
+			 * Set direction after setting PWM to prevent reversing
+			 *   direction on accident and straining the system.
+			 */
+			ts8820_pwm_set((opt_hb + 6), opt_prescaler, 0);
+			ts8820_hb_set(opt_hb, 0);
+			break;
+		  case fwd:
+			ts8820_hb_set(opt_hb, 0);
+			ts8820_pwm_set((opt_hb + 6), opt_prescalar,
+			  (opt_hbduty*0x1000/1000));
+			break;
+		  case rev:
+			ts8820_hb_set(opt_hb, 1);
+			ts8820_pwm_set((opt_hb + 6), opt_prescalar,
+			  (opt_hbduty*0x1000/1000));
+			break;
+		  case invalid:
+		  default:
+			break;
 		}
 	}
 
@@ -244,4 +326,3 @@ int main(int argc, char **argv) {
 
 	return 0;
 }
-
