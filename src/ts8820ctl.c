@@ -61,7 +61,7 @@ static void usage(char **argv) {
 	  "  -d, --setdac=<chan>    Set DAC channel (1-4)\n"
 	  "  -v, --mvolts=<mvolts>  DAC/PWM voltage in mV (0-10000)\n"
 	  "  -p, --pwm=<out>        Put PWM on digital out (1-6)\n"
-	  "  -P, --prescalar=<val>  PWM freq will be (12207/(2^val)) Hz (0-7)\n"
+	  "  -P, --prescaler=<val>  PWM freq will be (12207/(2^val)) Hz (0-7)\n"
 	  "  -R, --read             Read 16-bit register at <addr>\n"
 	  "  -W, --write=<val>      Write 16-bit <val> to register at <addr>\n"
 	  "  -A, --address=<addr>   TS-8820 FPGA address to read or write\n"
@@ -76,7 +76,7 @@ static void usage(char **argv) {
 	  "  -F, --fwd=<duty>       Drive sel. H Bridge fwd with <duty> cycle\n"
 	  "  -E, --rev=<duty>       Drive sel. H Bridge rev with <duty> cycle\n"
 	  "When moving fwd or rev, <duty> is 0 - 1000, where 1000 is 100%%.\n"
-	  "The --prescalar flag controls H Bridge PWM drive frequency. When\n"
+	  "The --prescaler flag controls H Bridge PWM drive frequency. When\n"
 	  "unspecified, defaults to 12207 Hz.\n"
 	  "Only the last --hbridge* option on the command line will be\n"
 	  "affected by the specified control flags\n\n"
@@ -99,7 +99,7 @@ int main(int argc, char **argv) {
 	int model;
 	int opt_sample = 0, opt_acquire = 0, opt_setdac = 0;
 	int opt_rate = 10000, opt_mask = 0xffff, opt_mvolts = 0;
-	int opt_pwm = 0, opt_prescalar = 0;
+	int opt_pwm = 0, opt_prescaler = 0;
 	/* H Bridge specific */
 	int opt_hb = 0, opt_hbset = -1, opt_hbduty = 0;
 	int opt_DO = 0, opt_DOarg = 0, opt_DI = 0;
@@ -113,6 +113,7 @@ int main(int argc, char **argv) {
 	  { "setdac",	required_argument,	0, 'd' },
 	  { "mvolts",	required_argument,	0, 'v' },
 	  { "pwm",	required_argument,	0, 'p' },
+	  { "prescaler",required_argument,	0, 'P' },
 	  { "prescalar",required_argument,	0, 'P' },
 	  { "hbridge1",	no_argument,		0, '1' },
 	  { "hbridge2",	no_argument,		0, '2' },
@@ -161,7 +162,7 @@ int main(int argc, char **argv) {
 			opt_pwm = strtoul(optarg, NULL, 0);
 			break;
 		  case 'P':
-			opt_prescalar = strtoul(optarg, NULL, 0);
+			opt_prescaler = strtoul(optarg, NULL, 0);
 			break;
 		  case '1':
 			opt_hb = 1;
@@ -260,7 +261,7 @@ int main(int argc, char **argv) {
 			if (opt_mvolts < 0) {
 				ts8820_pwm_disable(opt_pwm);
 			} else {
-				ts8820_pwm_set(opt_pwm, opt_prescalar,
+				ts8820_pwm_set(opt_pwm, opt_prescaler,
 				  opt_mvolts*0x1000/10000);
 			}
 		}
@@ -281,7 +282,7 @@ int main(int argc, char **argv) {
 			 * H Bridge PWM channels are 7 and 8.
 			 */
 			ts8820_hb_disable(opt_hb);
-			ts8820_pwm_set((opt_hb + 6), opt_prescalar, 0);
+			ts8820_pwm_set((opt_hb + 6), opt_prescaler, 0);
 			break;
 		  case brake:
 			/* Both sides of the motor will by default set to
@@ -298,12 +299,12 @@ int main(int argc, char **argv) {
 			break;
 		  case fwd:
 			ts8820_hb_set(opt_hb, 0);
-			ts8820_pwm_set((opt_hb + 6), opt_prescalar,
+			ts8820_pwm_set((opt_hb + 6), opt_prescaler,
 			  (opt_hbduty*0x1000/1000));
 			break;
 		  case rev:
 			ts8820_hb_set(opt_hb, 1);
-			ts8820_pwm_set((opt_hb + 6), opt_prescalar,
+			ts8820_pwm_set((opt_hb + 6), opt_prescaler,
 			  (opt_hbduty*0x1000/1000));
 			break;
 		  case invalid:
