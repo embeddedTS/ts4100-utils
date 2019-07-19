@@ -50,24 +50,35 @@ static void usage(char **argv) {
 	fprintf(stderr,
 	  "%s\n\n"
 	  "Usage: %s [OPTION] ...\n"
-	  "Technologic Systems TS-8820 FPGA manipulation\n"
+	  "Technologic Systems TS-8820-4100 FPGA manipulation\n"
 	  "\n"
-	  "General options:\n"
+	  " General Options:\n"
 	  "  -s, --sample=<num>     Display num samples per ADC channel in mV\n"
 	  "  -a, --acquire=<num>    Send num raw samples per ADC channel to "\
 	    "stdout\n"
 	  "  -r, --rate=<speed>     Sample at <speed> Hz (default 10000)\n"
 	  "  -m, --mask=<mask>      Sample only channels set in 16-bit <mask>\n"
-	  "  -d, --setdac=<chan>    Set DAC channel (1-4)\n"
-	  "  -v, --mvolts=<mvolts>  DAC/PWM voltage in mV (0-10000)\n"
-	  "  -p, --pwm=<out>        Put PWM on digital out (1-6)\n"
-	  "  -P, --prescaler=<val>  PWM freq will be (12207/(2^val)) Hz (0-7)\n"
 	  "  -R, --read             Read 16-bit register at <addr>\n"
 	  "  -W, --write=<val>      Write 16-bit <val> to register at <addr>\n"
 	  "  -A, --address=<addr>   TS-8820 FPGA address to read or write\n"
 	  "  -h, --help             This help\n\n"
 
-	  "H Bridge Control:\n"
+	  " PWM Options:\n"
+	  "  -p, --pwm=<out>        Set PWM on digital <out> (1-6)\n"
+	  "  -u, --duty=<duty>      Set PWM <duty> cycle\n"
+	  "  -P, --prescaler=<val>  PWM freq. (12207/(2^val)) Hz (0-7)\n\n"
+
+	  "  PWMs 1-6 output directly to OUT1-OUT6 by overriding DIO setting.\n"
+	  "  PWM channel can be reverted back to DIO by setting a duty of -1\n"
+	  "  Range of PWM <duty> is 0-1000, where 1000 is 100%%.\n"
+	  "  The --prescaler flag controls PWM output frequency. When\n"
+	  "  unspecified, defaults to 12207 Hz.\n\n"
+
+	  " DAC Options:\n"
+	  "  -d, --setdac=<chan>    Set DAC channel (1-4)\n"
+	  "  -v, --mvolts=<mvolts>  DAC voltage in mV (0-10000)\n\n"
+
+	  " H Bridge Options:\n"
 	  "  -1, --hbridge1         Control H Bridge #1 with following flags\n"
 	  "  -2, --hbridge2         Control H Bridge #2 with following flags\n"
 	  "  -I, --disable          Disable selected H Bridge (same as coast)\n"
@@ -75,21 +86,18 @@ static void usage(char **argv) {
 	  "  -B, --brake            Set selected H Bridge to brake\n"
 	  "  -F, --fwd=<duty>       Drive sel. H Bridge fwd with <duty> cycle\n"
 	  "  -E, --rev=<duty>       Drive sel. H Bridge rev with <duty> cycle\n"
-	  "When moving fwd or rev, <duty> is 0 - 1000, where 1000 is 100%%.\n"
-	  "The --prescaler flag controls H Bridge PWM drive frequency. When\n"
-	  "unspecified, defaults to 12207 Hz.\n"
-	  "Only the last --hbridge* option on the command line will be\n"
-	  "affected by the specified control flags\n\n"
+	    "\n"
 
-	  "DIO control:\n"
+	  "  When moving fwd or rev, <duty> is 0-1000, where 1000 is 100%%.\n"
+	  "  The --prescaler flag controls H Bridge PWM drive frequency. When\n"
+	  "  unspecified, defaults to 12207 Hz.\n"
+	  "  Only the last --hbridge* option on the command line will be\n"
+	  "  affected by the specified control flags\n\n"
+
+	  " DIO Options:\n"
 	  "  -c, --counter=<in>     Read pulse counter for digital in (1-14)\n"
 	  "  -D, --setdio=<val>     Set DIO output to val\n"
-	  "  -G, --getdio           Get DIO input\n"
-
-	  "PWMs 1-6 feed digital outputs; PWMs 7 and 8 feed H-bridges.\n"
-	  "The --pwm option overrides DIO settings and makes the pin a PWM.\n"
-	  "The --pwm=<out> --mvolts=10000 gives a 100%% duty cycle.\n"
-	  "To revert an output back to DIO, use --mvolts=-1.\n",
+	  "  -G, --getdio           Get DIO input\n\n",
 	  copyright, argv[0]
 	);
 }
@@ -97,9 +105,12 @@ static void usage(char **argv) {
 int main(int argc, char **argv) {
 	int c;
 	int model;
-	int opt_sample = 0, opt_acquire = 0, opt_setdac = 0;
-	int opt_rate = 10000, opt_mask = 0xffff, opt_mvolts = 0;
-	int opt_pwm = 0, opt_prescaler = 0;
+	int opt_sample = 0, opt_acquire = 0;
+	int opt_rate = 10000, opt_mask = 0xffff;
+	/* PWM specific */
+	int opt_pwm = 0, opt_pwmduty = 0, opt_prescaler = 0;
+	/* DAC specific */
+	int opt_setdac = 0, opt_mvolts = 0;
 	/* H Bridge specific */
 	int opt_hb = 0, opt_hbset = -1, opt_hbduty = 0;
 	int opt_DO = 0, opt_DOarg = 0, opt_DI = 0;
@@ -113,6 +124,7 @@ int main(int argc, char **argv) {
 	  { "setdac",	required_argument,	0, 'd' },
 	  { "mvolts",	required_argument,	0, 'v' },
 	  { "pwm",	required_argument,	0, 'p' },
+	  { "duty",	required_argument,	0, 'u' },
 	  { "prescaler",required_argument,	0, 'P' },
 	  { "prescalar",required_argument,	0, 'P' },
 	  { "hbridge1",	no_argument,		0, '1' },
@@ -138,13 +150,10 @@ int main(int argc, char **argv) {
 	}
 
 	while((c = getopt_long(argc, argv,
-	  "c:p:P:12ICBF:E:r:v:m:hs:a:d:D:GRW:A:", long_options, NULL)) != -1) {
+	  "c:p:u:P:12ICBF:E:r:v:m:hs:a:d:D:GRW:A:", long_options, NULL)) != -1) {
 		switch (c) {
 		  case 'r':
 			opt_rate = strtoul(optarg, NULL, 0);
-			break;
-		  case 'v':
-			opt_mvolts = strtoul(optarg, NULL, 0);
 			break;
 		  case 'm':
 			opt_mask = strtoul(optarg, NULL, 0);
@@ -158,8 +167,18 @@ int main(int argc, char **argv) {
 		  case 'd':
 			opt_setdac = strtoul(optarg, NULL, 0);
 			break;
+		  case 'v':
+			opt_mvolts = strtoul(optarg, NULL, 0);
+			if (opt_mvolts < 0) opt_mvolts = 0;
+			if (opt_mvolts > 10000) opt_mvolts = 10000;
+			break;
 		  case 'p':
 			opt_pwm = strtoul(optarg, NULL, 0);
+			break;
+		  case 'u':
+			opt_pwmduty = strtoul(optarg, NULL, 0);
+			if (opt_pwmduty < 0) opt_pwmduty = -1;
+			if (opt_pwmduty > 1000) opt_pwmduty = 1000;
 			break;
 		  case 'P':
 			opt_prescaler = strtoul(optarg, NULL, 0);
@@ -250,19 +269,18 @@ int main(int argc, char **argv) {
 	if (opt_acquire) ts8820_adc_acq(opt_rate, opt_acquire, opt_mask);
 
 	if (opt_setdac) {
-		if ((opt_setdac > 0 && opt_setdac <= 4) && \
-		    (opt_mvolts > 0 && opt_mvolts <= 10000)) {
+		if (opt_setdac > 0 && opt_setdac <= 4) {
 			ts8820_dac_set(opt_setdac, opt_mvolts);
 		}
 	}
 
 	if (opt_pwm) {
 		if (opt_pwm > 0 && opt_pwm <= 6) {
-			if (opt_mvolts < 0) {
+			if (opt_pwmduty < 0) {
 				ts8820_pwm_disable(opt_pwm);
 			} else {
 				ts8820_pwm_set(opt_pwm, opt_prescaler,
-				  opt_mvolts*0x1000/10000);
+				  opt_pwmduty*0x1000/1000);
 			}
 		}
 	}
