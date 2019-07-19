@@ -277,8 +277,15 @@ int ts8820_counter(int n) {
         return (int)peek16(0x20 + 2*(n-1));
 }
 
+/* Read the reg contents to retain the value of bits 11:6 as these are PWM
+ * overrides which should only be set by PWM functions.
+ */
 void ts8820_do_set(unsigned int lval) {
-        poke16(0x8, lval & 0x3f);
+	unsigned short reg;
+
+	reg = peek16(0x8);
+	reg &= ~(0x3f);
+	poke16(0x8, (reg | (lval & 0x3f)));
 }
 
 unsigned int ts8820_di_get(void) {
