@@ -34,11 +34,11 @@ int ts8820_init(int twifd);
  */
 int ts8820_adc_acq(int, int, unsigned short);
 
-/* int ts8820_adc_sam(int hz, int n)
+/* int ts8820_adc_sam(int hz, int n, int range_in)
  * Prints n rows of human readable data on all channels to stdout, sampled 
  * at hz Hz.
  */
-int ts8820_adc_sam(int, int);
+int ts8820_adc_sam(int hz, int n, int range_in);
 
 /* ts8820_dac_set(int dac, int mv)
  * mv is the DAC setting in millivolts, 0 to 10000.

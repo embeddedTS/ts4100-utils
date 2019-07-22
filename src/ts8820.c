@@ -188,11 +188,11 @@ int ts8820_adc_acq(int hz, int n, unsigned short mask) {
 /* XXX: Does not support twiddling DIO from the CPU to set oversampling and
  * voltage range.
  */
-int ts8820_adc_sam(int hz, int n) {
+int ts8820_adc_sam(int hz, int n, int range_in) {
         unsigned short *results;
         unsigned short status, ready;
         unsigned int pacing, i, j, collected;
-        int x;
+        int x, range = range_in ? 10000 : 5000;
 
         results = malloc(n*32);
         assert (results != NULL);
@@ -231,7 +231,7 @@ int ts8820_adc_sam(int hz, int n) {
         for (i=0; i<n; i++) {
                 for (j=0; j<16; j++) {
                         x = (signed short)results[i*16+hw2sw[j]];
-                        x = (x*10000)/0x8000;
+                        x = (x*range)/0x8000;
                         printf("%4d ", x);
                 }
                 printf("\n");
