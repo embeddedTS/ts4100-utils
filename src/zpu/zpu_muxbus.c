@@ -25,8 +25,8 @@
 /* Input, Output, and Output Enable registers.
  * These are 32-bit wide registers. Each bit position represents a single DIO
  * in contrast to the FPGA I2C address map which has each DIO in its own reg.
- * For example, bit 10 of O_REG1 controls the output state of DIO_4.
- * ((32 * 1) + 10) == 41 == DIO_4 in the FPGA GPIO map. All registers are mapped
+ * For example, bit 10 of O_REG1 controls the output state of DIO_5.
+ * ((32 * 1) + 10) == 42 == DIO_5 in the FPGA GPIO map. All registers are mapped
  * the same way.
  * O_REG* is read/write, setting and reading back the output value.
  * I_REG* is read only, and reads the input value of each GPIO pin.
@@ -71,6 +71,15 @@
 #define TSU_DAT		(0x03 + 1)	* 6
 #define TP_CS		(0x03 + 1)	* 6
 #define TH_DAT		(0x03 + 1)	* 6
+
+/* State machine defines for operation loop */
+#define	GET_CMD		0
+#define	GET_ADRH	1
+#define	GET_ADRL	2
+#define	GET_DATH	3
+#define	GET_DATL	4
+#define	RET_WRITE	5
+#define	RET_READ	6
 
 /* MUXBUS packet construction
  *
@@ -515,13 +524,13 @@ int main(int argc, char **argv)
 	 */
 
 	while(1) {
-		if (state < 5) {
+		if (state < RET_WRITE) {
 			while ((buf = getc()) == -1);
 		}
 
 		switch(state) {
 		  /* Get command byte, first byte */
-		  case 0:
+		  case GET_CMD:
 			rwn = buf & 0x1;
 			set_dir(rwn);
 			width = (buf & 0x2) >> 1;
@@ -529,26 +538,26 @@ int main(int argc, char **argv)
 			adr = 0;
 			dat = 0;
 			break;
-		  case 1:
-		  case 2:
+		  case GET_ADRH:
+		  case GET_ADRL:
 			adr = (adr << 8) + (buf & 0xFF);
 			state++;
-			if (state == 3) {
+			if (state == GET_DATH) {
 				set_ad(adr);
 				set_ad_oe(1);
 				set_alen(0);
 				delay_clks(TP_ALE);
 				set_alen(1);
 				delay_clks(TH_ADR);
-				if (rwn == READ) state = 6;
+				if (rwn == READ) state = RET_READ;
 			}
 			break;
-		  case 3:
-		  case 4:
+		  case GET_DATH:
+		  case GET_DATL:
 			dat = (dat << 8) + (buf & 0xFF);
 			state++;
 			break;
-		  case 5:
+		  case RET_WRITE:
 			set_ad(dat);
 			delay_clks(TSU_DAT);
 			set_csn(0);
@@ -558,7 +567,7 @@ int main(int argc, char **argv)
 			IRQ0_REG = (unsigned long)(&fifo.txput) + 3;
 			state = 0;
 			break;
-		  case 6:
+		  case RET_READ:
 			set_ad_oe(0);
 			delay_clks(TSU_DAT);
 			set_csn(0);
