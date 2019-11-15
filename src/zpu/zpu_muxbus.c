@@ -455,15 +455,17 @@ unsigned short get_ad(void)
 	return dat;
 }
 
-void delay_clks(unsigned long cnt)
+/* This works so long as the maximum delay count is not more than half the span
+ * of the free running counter. The counter in this is 32 bits wide, so limit
+ * the max delay to 16 bits. In practice, this MUXBUS application will come
+ * nowhere near that max.
+ */
+void delay_clks(unsigned short cnt)
 {
-	unsigned long cur_time = TIMER_REG;
+	unsigned long end_time;
 
-	if ((cur_time + cnt) > cur_time) {
-		while ((cur_time + cnt) > TIMER_REG);
-	} else {
-		while ((cur_time + cnt) < TIMER_REG);
-	}
+	end_time = TIMER_REG + cnt;
+	while ((signed long)(end_time - TIMER_REG) > 0);
 }
 
 void muxbus_write_16(unsigned short adr, unsigned short dat)
