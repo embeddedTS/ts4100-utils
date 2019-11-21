@@ -243,15 +243,16 @@ int main(int argc, char **argv)
 		fpoke8(twifd, 19, 0x3);
 
 		/* 4094 is the max size so pokes must be broken up */
-		fpokestream8(twifd, buf, 8192, 4094);
-		fpokestream8(twifd, &buf[4094], 12286, 4094);
-		fpokestream8(twifd, &buf[8188], 16380, 4);
+		fpokestream8(twifd, buf,	8192,		4094);
+		fpokestream8(twifd, &buf[4094],	8192+4094,	4094);
+		fpokestream8(twifd, &buf[8188],	8192+4094+4094,	4);
 		fpoke8(twifd, 19, 0x0);
 		unlink(tempfile);
 	}
 
 	if(opt_save) {
 		uint8_t reset_state;
+		int ret = 0;
 
 		if (isatty(fileno(stdout))) {
 			fprintf(stderr,
@@ -267,11 +268,15 @@ int main(int argc, char **argv)
 		 */
 		reset_state = fpeek8(twifd, 19);
 		fpoke8(twifd, 19, 0x3);
-		int ret = fpeekstream8(twifd, buf, 8192, 8192);
+
+		/* 4094 is the max size so pokes must be broken up */
+		ret |= fpeekstream8(twifd, buf,		8192,		4094);
+		ret |= fpeekstream8(twifd, &buf[4094],	8192+4094,	4094);
+		ret |= fpeekstream8(twifd, &buf[8188],	8192+4094+4094,	4);
 
 		fpoke8(twifd, 19, reset_state);
 		fwrite(buf, 1, 8192, stdout);
-		if(ret != 0) return 1;
+		if (ret) return 1;
 	}
 
 	if(opt_reset) {
