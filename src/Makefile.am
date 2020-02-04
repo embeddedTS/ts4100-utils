@@ -18,5 +18,9 @@ ts8820ctl_SOURCES = tszpufifo.c gpiolib.c fpga.c ts8820ctl.c ts8820.c
 ts8820ctl_LDFLAGS = -mcpu=cortex-a9
 ts8820ctl_CPPFLAGS = -Wall -DGITCOMMIT="\"${GITCOMMIT}\""
 
-bin_PROGRAMS = tshwctl tsmicroctl tszpuctl ts8820ctl
+tsmuxbusctl_SOURCES = tszpufifo.c gpiolib.c  fpga.c tsmuxbusctl.c
+tsmuxbusctl_LDFLAGS = -mcpu=cortex-a9
+tsmuxbusctl_CPPFLAGS = -Wall -DGITCOMMIT="\"${GITCOMMIT}\""
+
+bin_PROGRAMS = tshwctl tsmicroctl tszpuctl ts8820ctl tsmuxbusctl
 noinst_PROGRAMS = load_fpga
