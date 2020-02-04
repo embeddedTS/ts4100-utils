@@ -1,6 +1,11 @@
 #ifndef __TSZPUFIFO_H__
 #define __TSZPUFIFO_H__
 
+enum flowcontrol {
+	NO_FLOW_CTRL = 0,
+	FLOW_CTRL = 1,
+};
+
 void zpu_fifo_deinit(int twifd);
 int32_t zpu_fifo_init(int twifd, int flow_control);
 size_t zpu_fifo_get(int twifd, uint8_t *buf, size_t size);

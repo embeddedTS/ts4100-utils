@@ -168,6 +168,7 @@ void zpu_fifo_deinit(int twifd)
 {
 	fifo_flags |= (1<<25);
 	fpoke8(twifd, fifo_adr, fifo_flags >> 24);
+	close(irqfd);
 }
 
 /* The get and put functions are named from the CPU perspective, while variables
