@@ -77,6 +77,7 @@ static void zpu_rx_recalc(int twifd)
 int32_t zpu_fifo_init(int twifd, int flow_control)
 {
 	char gpio_buf[64];
+	char x = '?';
 
 	/* Use gpiolib functions to open IRQ, set input, and rising edge trig */
 	gpio_export(FPGA_IRQ);
@@ -153,6 +154,10 @@ int32_t zpu_fifo_init(int twifd, int flow_control)
 	snprintf(gpio_buf, sizeof(gpio_buf), "/sys/class/gpio/gpio%d/value",
 	  FPGA_IRQ);
 	irqfd = open(gpio_buf, O_RDONLY);
+
+	/* Drain the IRQ FD in case there is a spurious IRQ waiting */
+	lseek(irqfd, 0, 0);
+	read(irqfd, &x, 1);
 
 	return irqfd;
 };
