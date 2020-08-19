@@ -12,7 +12,6 @@
 #include <assert.h>
 
 #include "i2c-dev.h"
-#include "fpga.h"
 
 static uint8_t i2c_addr;
 
@@ -36,26 +35,9 @@ int fpga_init(const char *i2c_bus, uint8_t addr)
 	return fd;
 }
 
-void fpoke8(int twifd, uint16_t addr, uint8_t data)
+int fpga_deinit(int twifd)
 {
-	int ret;
-
-	ret = fpokestream8(twifd, &data, addr, 1);
-	if (ret) {
-		perror("Failed to write to FPGA");
-	}
-}
-
-uint8_t fpeek8(int twifd, uint16_t addr)
-{
-	uint8_t data = 0;
-	int ret;
-	ret = fpeekstream8(twifd, &data, addr, 1);
-
-	if (ret) {
-		perror("Failed to read from FPGA");
-	}
-	return data;
+	return close(twifd);
 }
 
 int fpeekstream8(int twifd, uint8_t *data, uint16_t addr, int size)
@@ -118,4 +100,26 @@ int fpokestream8(int twifd, uint8_t *data, uint16_t addr, int size)
 		return 1;
 	}
 	return 0;
+}
+
+void fpoke8(int twifd, uint16_t addr, uint8_t data)
+{
+	int ret;
+
+	ret = fpokestream8(twifd, &data, addr, 1);
+	if (ret) {
+		perror("Failed to write to FPGA");
+	}
+}
+
+uint8_t fpeek8(int twifd, uint16_t addr)
+{
+	uint8_t data = 0;
+	int ret;
+	ret = fpeekstream8(twifd, &data, addr, 1);
+
+	if (ret) {
+		perror("Failed to read from FPGA");
+	}
+	return data;
 }

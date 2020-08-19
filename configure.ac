@@ -2,7 +2,7 @@
 # Process this file with autoconf to produce a configure script.
 
 AC_PREREQ([2.69])
-AC_INIT(ts4100-utils, 1.0, mark@embeddedarm.com)
+AC_INIT(ts4100-utils, 1.0, support@embeddedarm.com)
 AC_CONFIG_SRCDIR([src/tshwctl.c])
 #AC_CONFIG_HEADERS([config.h])
 
@@ -12,7 +12,6 @@ AM_INIT_AUTOMAKE([1.00 foreign no-define])
 AC_PROG_CC
 
 # Checks for libraries.
-# FIXME: Replace `main' with a function in `-lm':
 AC_CHECK_LIB([gpiod], [gpiod_line_request_input], [], [AC_MSG_ERROR([libgpiod not found])])
 
 # Checks for header files.
