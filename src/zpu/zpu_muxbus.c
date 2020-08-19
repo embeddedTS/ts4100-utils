@@ -3,44 +3,12 @@
 #include <stdarg.h>
 #include <string.h>
 
-/* XXX: Currently only supports 16bit transactions, meant for 8820 */
+#include "zpu_fifo.h"
+#include "ts_zpu.h"
 
-/* List of static locations in ZPU memory */
-
-/* IRQ registers have a value written to them. In order to clear the IRQ in the
- * FPGA, the host CPU (not the ZPU) needs to do an I2C access to that address.
- * The IRQ is cleared automatically by the FPGA.
- *
- * Note that the FIFO uses IRQ0, and it is advised that customer applications
- * use IRQ1.
+/* NOTE: In this current implementation, only 16-but MUXBUS access are supported.
+ * This is meant specifically for the TS-8820 which has 16-bit registers only.
  */
-#define IRQ0_REG  *(volatile unsigned long *)0x2030
-#define IRQ1_REG  *(volatile unsigned long *)0x2034
-
-/* 32-bit free running timer that runs when the FPGA is unreset. Runs at FPGA
- * main clock, 63 MHz
- */
-#define TIMER_REG *(volatile unsigned long *)0x2030
-
-/* Input, Output, and Output Enable registers.
- * These are 32-bit wide registers. Each bit position represents a single DIO
- * in contrast to the FPGA I2C address map which has each DIO in its own reg.
- * For example, bit 10 of O_REG1 controls the output state of DIO_5.
- * ((32 * 1) + 10) == 42 == DIO_5 in the FPGA GPIO map. All registers are mapped
- * the same way.
- * O_REG* is read/write, setting and reading back the output value.
- * I_REG* is read only, and reads the input value of each GPIO pin.
- * OE_REG* is read/write, setting a bit to a 1 sets that pin as an output.
- */
-#define I_REG0		*(volatile unsigned long *)0x2000
-#define I_REG1		*(volatile unsigned long *)0x2004
-#define I_REG2		*(volatile unsigned long *)0x2008
-#define OE_REG0		*(volatile unsigned long *)0x2010
-#define OE_REG1		*(volatile unsigned long *)0x2014
-#define OE_REG2		*(volatile unsigned long *)0x2018
-#define O_REG0		*(volatile unsigned long *)0x2020
-#define O_REG1		*(volatile unsigned long *)0x2024
-#define O_REG2		*(volatile unsigned long *)0x2028
 
 #define READ		1
 #define WRITE		0
@@ -63,8 +31,6 @@
  *
  * The numbers below are based on a 0xF0FF value in the standard MUXBUS config
  * register.
- *
- * TODO: Find the best numbers to use for the TS-8820, 0xFOFF is "worst case"
  */
 #define TP_ALE		(0x07 + 1)	* 6
 #define TH_ADR		(0x21 + 1)	* 6
@@ -83,286 +49,33 @@
 
 /* MUXBUS packet construction
  *
- * MSB
- * bit 0: 1 = MB Read, 0 = MB Write
- * bit 1: 1 = 16bit, 0 = 8bit
+ * NOTE: in this current implementation, only 16-bit MUXBUS accesses are
+ * supported.
  *
- * Following that, exact expected byte count is known
+ * The request packet is 3 or 5 bytes. The first byte being a configuration
+ * packet, followed by the 16-bit MUXBUS address, and in the case of a write,
+ * 16-bit data to write to the address.
  *
  * 3 or 5 bytes
- * MSB =
- *   0: read
- *   1: write
- *   *: Undefined (Expand to support 8bit transactions?
+ * MSB - 0
+ *   bit 0: 1 = MB Read, 0 = MB Write
+ *   bit 1: 1 = 16bit, 0 = 8bit
+ *   bit 2-7: Undefined
  * MSB - 1:2
  *   MUXBUS address
  * MSB - 3:4
- *   MUXBUS data (optional)
+ *   MUXBUS data (only during MB Write)
  *
  * Response 2 bytes
  *   2:1 Read data
  *
- * Need to think about how to clearly define a packet start and end so the FIFO
- * can resync as necessary. A two way IRQ could be used, this was implemented
- * in other cutom logic. Assert it when there is data ready for the ZPU to read.
+ * After a successful MUXBUS read or write, the ZPU will assert an IRQ to the CPU.
+ * In the case of a read, the 2 bytes are put in the FIFO before an IRQ is raised.
+ * In the case of a write, no data is put in the ZPU TX FIFO, but an IRQ is still
+ * asserted. This allows the CPU to wait until it can be assured the MUXBUS write
+ * was completed. This is safe since the CPU side FIFO read would clear the IRQ,
+ * and simply find that there was no new data in the buffer.
  */
-
-/* FIFO Connection to CPU
- *
- * While the ZPU can be used standalone, its often beneficial to move data
- * between it and the host CPU. We have created a simple FIFO that resides in
- * the ZPU memory space. Due to the layout of the FPGA and memory, the CPU has
- * full access to ZPU RAM at any time. This allows the CPU to pull/push data
- * to the ZPU fifo as needed.
- *
- * All of the below functions are commented for clarity.
- *
- * HOWEVER! We do not recommend modifying these functions in any way unless you
- * know exactly what you are doing!
- */
-
-/* Setup of FIFO sizes as well as the struct that contains the FIFO */
-#define ZPU_TXFIFO_SIZE		256
-#define ZPU_RXFIFO_SIZE		16
-#define ZPU_TXFIFO_NOFLOW_OPT	(1 << 25)
-#define ZPU_ATTENTION		(1 << 26)
-#define MB_WIDTH		(1 << 27) // 1 = 16bit, 0 = 8bit
-#define MB_WRn			(1 << 28)
-static struct zpu_fifo {
-	volatile unsigned long flags;			// buffer sz, flow opt
-	unsigned long txput;				// TX FIFO head
-	volatile unsigned long txget;			// TX FIFO tail
-	unsigned char txdat[ZPU_TXFIFO_SIZE];		// TX buffer
-	volatile unsigned long rxput;			// RX FIFO head
-	unsigned long rxget;				// RX FIFO tail
-	volatile unsigned char rxdat[ZPU_RXFIFO_SIZE];  // RX buffer
-} fifo;
-
-/* This function is used from printf() to format int's to printable ASCII
- * Not intended to be called directly
- */
-void _printn(unsigned u, unsigned base, char issigned,
-  volatile void (*emitter)(char, void *), void *pData)
-{
-	const char *_hex = "0123456789ABCDEF";
-	if (issigned && ((int)u < 0)) {
-		(*emitter)('-', pData);
-		u = (unsigned)-((int)u);
-	}
-	if (u >= base) _printn(u/base, base, 0, emitter, pData);
-	(*emitter)(_hex[u%base], pData);
-}
-
-/* A light-weight implementation of printf() that supports the common formats
- * Not intended to be called directly
- */
-void _printf(const char *format, volatile void (*emitter)(char, void *),
-  void *pData, va_list va)
-{
-	char c;
-	unsigned u;
-	char *s;
-
-	while (*format) {
-		if (*format == '%') {
-			switch (*++format) {
-			  case 'c':
-				c = (char)va_arg(va, int);
-				(*emitter)(c, pData);
-				break;
-			  case 'u':
-				u = va_arg(va, unsigned);
-				_printn(u, 10, 0, emitter, pData);
-				break;
-			  case 'd':
-				u = va_arg(va, unsigned);
-				_printn(u, 10, 1, emitter, pData);
-				break;
-			  case 'x':
-				u = va_arg(va, unsigned);
-				_printn(u, 16, 0, emitter, pData);
-				break;
-			  case 's':
-				s = va_arg(va, char *);
-				while (*s) {
-					(*emitter)(*s, pData);
-					s++;
-				}
-			}
-		} else {
-			(*emitter)(*format, pData);
-		}
-
-		format++;
-	}
-}
-
-/* Called from sprintf() to output string to a buffer.
- * Not intended to be called directly
- */
-void _buf_emitter(char c, void *pData)
-{
-	*((*((char **)pData)))++ = c;
-}
-
-/* Place a single byte in to the TX FIFO
- * Once the byte is added to the FIFO, raise the IRQ with the address of the
- * TX FIFO head. When the CPU reads the current TX FIFO head, the IRQ is cleared
- * automatically by the FPGA.
- *
- * This function will not immediately return if the last byte put in to the TX
- * FIFO is one pos. behind the current tail which would result in the current
- * head and tail pos. being the same as head is post incremented. This only
- * applies if the CPU has requested flow control to be enabled.
- *
- * A intermediate variable is used for the TX FIFO head location.
- *
- * Can be called directly
- */
-void putc(char c)
-{
-	unsigned long put = fifo.txput;
-
-	fifo.txdat[put++] = c;
-	if (put == sizeof(fifo.txdat)) put = 0;
-
-	/* If the head was just set to the tail position after incrementing, and
-	 * the CPU has requested that flow control is enabled; set the head loc.
-	 * to just behind the tail, assert the IRQ, and spin until the tail is
-	 * moved (data read by CPU) or flow control is disabled by the CPU.
-	 */
-	if (put == fifo.txget &&
-	  (fifo.flags & ZPU_TXFIFO_NOFLOW_OPT) == 0) {
-		fifo.txput = (put - 1);
-
-		while (put == fifo.txget &&
-		  (fifo.flags & ZPU_TXFIFO_NOFLOW_OPT) == 0);
-	}
-
-	fifo.txput = put;
-}
-
-/* Called from printf() to output each character to the FIFO.
- * Not intended to be called directly
- */
-void _char_emitter(char c, void *pData)
-{
-	putc(c);
-}
-
-/* Place a null terminated string in to the TX FIFO.
- * This will directly write to the FIFO itself.
- *
- * Once the string has been completely added to the FIFO, raise the IRQ with the
- * address of the TX FIFO head. When the CPU reads the current TX FIFO head, the
- * IRQ is automatically cleared by the FPGA.
- *
- * This function will not immediately return if the last byte put in to the TX
- * FIFO is one pos. behind the current tail which would result in the current
- * head and tail pos. being the same as head is post incremented. This only
- * applies if the CPU has requested flow control to be enabled.
- *
- * If the string is longer than the TX FIFO or there is not enough space, so
- * long as flow control is enabled no data will be lost.
- *
- * A intermediate variable is used for the TX FIFO head location.
- *
- * Can be called directly
- */
-int puts(const char *s)
-{
-	unsigned long put = fifo.txput;
-	unsigned char c;
-
-	while ((c = *(s++)) != 0) {
-		fifo.txdat[put++] = c;
-		if (put == sizeof(fifo.txdat)) put = 0;
-
-		/* If the head was just set to the tail position after
-		 * incrementing, and the CPU has request that flow control is
-		 * enabled; set the head loc. to just behind the tail, assert
-		 * the IRQ, and spin until the tail is moved (data read by CPU)
-		 * or flow control is disabled by the CPU.
-		 *
-		 * This can happen if the string is bigger than the FIFO or if
-		 * there is already data waiting in the FIFO.
-		 */
-		if (put == fifo.txget &&
-		  (fifo.flags & ZPU_TXFIFO_NOFLOW_OPT) == 0) {
-			fifo.txput = (put - 1);
-
-			while (put == fifo.txget &&
-			  (fifo.flags & ZPU_TXFIFO_NOFLOW_OPT) == 0);
-		}
-	}
-
-	fifo.txput = put;
-
-	return 0;
-}
-
-/* The actual printf() function used that calls another function to do the real
- * formatting.
- * Can be called directly
- */
-int printf(const char *format, ...)
-{
-	va_list va;
-
-	va_start(va, format);
-	_printf(format, _char_emitter, NULL, va);
-	return 0;
-}
-
-/* An implementation of sprintf() that uses the same printf() formatting func.
- * Can be called directly
- */
-int sprintf(char *pInto, const char *format, ...)
-{
-	va_list va;
-	char *pInto_orig = pInto;
-
-	va_start(va, format);
-	_printf(format, _buf_emitter, &pInto, va);
-	*pInto = '\0';
-
-	return pInto - pInto_orig;
-}
-
-/* Receive a single byte from the RX FIFO.
- * This is simply polled from from the main program flow.
- * Can be called directly
- */
-signed long getc(void)
-{
-	signed long r;
-	unsigned long rxget = fifo.rxget;
-	if (rxget != fifo.rxput) {
-		r = fifo.rxdat[rxget++];
-		if (rxget == sizeof(fifo.rxdat)) rxget = 0;
-		fifo.rxget = rxget;
-		return r;
-	} else {
-		return -1;
-	}
-}
-
-/* Initialize the FIFO link so the CPU knows where it is and how to access it.
- * This needs to be called early in the main() function, before any FIFO actions
- * take place.
- *
- * The RAM address of the FIFO struct is stored at 0x3c (translates to 0x203c
- * in the FPGA I2C addressing). The CPU FIFO checks this location and the
- * software sets up all of the offsets based on this.
- */
-void initfifo(void)
-{
-	*(unsigned long *)0x3c = (unsigned long)(&fifo);
-	fifo.flags = sizeof(fifo.txdat) | sizeof(fifo.rxdat) << 12 |
-	  ZPU_TXFIFO_NOFLOW_OPT;
-}
-
-/* This ends the TS created FIFO code. */
 
 void initmuxbusio(void)
 {
@@ -468,6 +181,12 @@ void delay_clks(unsigned short cnt)
 	while ((signed long)(end_time - TIMER_REG) > 0);
 }
 
+/* The following functions are unused in this application as we normally
+ * interleave reading bytes from the ZPU FIFO and doing MUXBUS accesses. Doing so
+ * allows for a slightly smaller memory footprint
+ * The functions are left in place for completeness, but are not compiled during
+ * normal use. */
+#if 0
 void muxbus_write_16(unsigned short adr, unsigned short dat)
 {
 	set_dir(WRITE);
@@ -506,11 +225,16 @@ unsigned short muxbus_read_16(unsigned short adr)
 
 	return dat;
 }
+#endif
 
 
 /* ZPU MUXBUS application.
  *
- * TODO: Comment this application and the state machine below
+ * As noted above, this is only intended for 16-bit access of the TS-8820 FPGA.
+ * This implementation is packet based. e.g. a read is 3 bytes while a write is 5.
+ * The return value for a read is 2 bytes, while a write only notifies the CPU
+ * upon completion. IRQs are not asserted from the ZPU until a whole 16-bit word
+ * is available from the MUXBUS transaction.
  */
 int main(int argc, char **argv)
 {
@@ -518,14 +242,14 @@ int main(int argc, char **argv)
 	unsigned short adr, dat;
 	signed long buf;
 
-	initfifo();
+	fifo_init();
 	initmuxbusio();
 
-	/* NOTE: Assert IRQ only when we have fully put a packet in the FIFO
-	 * This could cause overrun issues though if not handled carefully.
-	 */
-
 	while(1) {
+		/* Every loop of this state machine, query to see if there is new
+		 * data in the RX FIFO. This only happens through the GET_DATL
+		 * state, any states beyond GET_CMD, GET_ADRH, GET_ADRL, GET_DATH,
+		 * and GET_DATL will no longer be expecting RX FIFO data */
 		if (state < RET_WRITE) {
 			while ((buf = getc()) == -1);
 		}
@@ -536,10 +260,11 @@ int main(int argc, char **argv)
 			rwn = buf & 0x1;
 			set_dir(rwn);
 			width = (buf & 0x2) >> 1;
-			state++;
+			state = GET_ADRH;
 			adr = 0;
 			dat = 0;
 			break;
+		  /* Get address high and low bytes, high byte first */
 		  case GET_ADRH:
 		  case GET_ADRL:
 			adr = (adr << 8) + (buf & 0xFF);
@@ -554,11 +279,16 @@ int main(int argc, char **argv)
 				if (rwn == READ) state = RET_READ;
 			}
 			break;
+		  /* In the case of a write, get H/L bytes of data to write to the
+		   * MUXBUS. High byte first. */
 		  case GET_DATH:
 		  case GET_DATL:
 			dat = (dat << 8) + (buf & 0xFF);
 			state++;
 			break;
+		  /* Do the actual write of data to MUXBUS register. While this
+		   * does not return any data, an IRQ is still asserted to let the
+		   * CPU know that the operation is complete */
 		  case RET_WRITE:
 			set_ad(dat);
 			delay_clks(TSU_DAT);
@@ -566,9 +296,15 @@ int main(int argc, char **argv)
 			delay_clks(TP_CS);
 			set_csn(1);
 			delay_clks(TH_DAT);
-			IRQ0_REG = (unsigned long)(&fifo.txput) + 3;
-			state = 0;
+			/* Used to indicate to the CPU that data was written to
+			 * MUXBUS. Dummy read of the FIFO is required from the CPU
+			 * side. */
+			fifo_raise_irq0();
+			state = GET_CMD;
 			break;
+		  /* Do the actual read. The CPU is expecting a full 16-bit qty
+		   * to be returned in a single read, therefore, do not assert IRQ
+		   * after the first byte, only the second byte. */
 		  case RET_READ:
 			set_ad_oe(0);
 			delay_clks(TSU_DAT);
@@ -577,13 +313,17 @@ int main(int argc, char **argv)
 			dat = get_ad();
 			set_csn(1);
 			delay_clks(TH_DAT);
-			putc((dat >> 8) & 0xFF);
+			/* Write both bytes to the FIFO, MSB first, do not raise
+			 * an IRQ with the first byte, only the second. The CPU
+			 * side is expecting to read a full two bytes in a single
+			 * FIFO readout. It will also be more efficient since this
+			 * can be done in a single I2C transaction. */
+			putc_noirq((dat >> 8) & 0xFF);
 			putc(dat & 0xFF);
-			IRQ0_REG = (unsigned long)(&fifo.txput) + 3;
-			state = 0;
+			state = GET_CMD;
 			break;
 		  default:
-			state = 0;
+			state = GET_CMD;
 			break;
 		}
 	}
