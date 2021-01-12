@@ -329,6 +329,7 @@ uint16_t zpu_muxbus_peek16(int twifd, uint16_t adr)
 	buf[2] = (adr & 0xFF);
 
 	zpu_fifo_put(twifd, buf, 3);
+	FD_ZERO(&efds);
 	FD_SET(irqfd, &efds);
 	/* TODO: Check the return value, maybe set a timeout? */
 	select(irqfd + 1, NULL, NULL, &efds, NULL);
@@ -359,6 +360,7 @@ void zpu_muxbus_poke16(int twifd, uint16_t adr, uint16_t dat)
 	buf[4] = (dat & 0xFF);
 
 	zpu_fifo_put(twifd, buf, 5);
+	FD_ZERO(&efds);
 	FD_SET(irqfd, &efds);
 	/* TODO: Check the return value, maybe set a timeout? */
 	select(irqfd + 1, NULL, NULL, &efds, NULL);
