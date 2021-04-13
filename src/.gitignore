@@ -4,3 +4,6 @@ tshwctl
 tsmicroctl
 tszpuctl
 tsmuxbusctl
+gpioctl
+gpioctl-gpiod
+gpiod-bulk-demo

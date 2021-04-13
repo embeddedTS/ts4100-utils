@@ -22,5 +22,17 @@ tsmuxbusctl_SOURCES = tszpufifo.c gpiolib.c  fpga.c tsmuxbusctl.c
 tsmuxbusctl_LDFLAGS = -mcpu=cortex-a9
 tsmuxbusctl_CPPFLAGS = -Wall -DGITCOMMIT="\"${GITCOMMIT}\""
 
+gpioctl_SOURCES = gpiolib.c
+gpioctl_LDFLAGS = -mcpu=cortex-a9
+gpioctl_CPPFLAGS = -Wall -DCTL -DGITCOMMIT="\"${GITCOMMIT}\""
+
+gpioctl_gpiod_SOURCES = gpiolib-gpiod.c
+gpioctl_gpiod_LDFLAGS = -mcpu=cortex-a9
+gpioctl_gpiod_CPPFLAGS = -Wall -DCTL -DGITCOMMIT="\"${GITCOMMIT}\""
+
+gpiod_bulk_demo_SOURCES = gpiolib-gpiod.c gpiod-bulk-demo.c
+gpiod_bulk_demo_LDFLAGS = -mcpu=cortex-a9
+gpiod_bulk_demo_CPPFLAGS = -Wall -DGITCOMMIT="\"${GITCOMMIT}\""
+
 bin_PROGRAMS = tshwctl tsmicroctl tszpuctl ts8820ctl tsmuxbusctl
-noinst_PROGRAMS = load_fpga
+noinst_PROGRAMS = load_fpga gpioctl gpioctl-gpiod gpiod-bulk-demo
