@@ -60,7 +60,10 @@
  * MSB - 0
  *   bit 0: 1 = MB Read, 0 = MB Write
  *   bit 1: 1 = 16bit, 0 = 8bit
- *   bit 2-7: Undefined
+ *   bit 7-2: Number of reads to stream + 1
+ *     A value from 0 to 63. Will cause <value>+1 muxbus transactions
+ *     which will end up with <value>+1 * 2 bytes written to the TX buffer.
+ *   This value only has meaning for reads, it is unused for MUXBUS writes.
  * MSB - 1:2
  *   MUXBUS address
  * MSB - 3:4
@@ -241,6 +244,7 @@ int main(int argc, char **argv)
 	unsigned char state = 0, rwn, width;
 	unsigned short adr, dat;
 	signed long buf;
+	unsigned char readcnt;
 
 	fifo_init();
 	initmuxbusio();
@@ -263,6 +267,7 @@ int main(int argc, char **argv)
 			state = GET_ADRH;
 			adr = 0;
 			dat = 0;
+			readcnt = ((buf & 0xFC) >> 2) + 1;
 			break;
 		  /* Get address high and low bytes, high byte first */
 		  case GET_ADRH:
@@ -306,6 +311,7 @@ int main(int argc, char **argv)
 		   * to be returned in a single read, therefore, do not assert IRQ
 		   * after the first byte, only the second byte. */
 		  case RET_READ:
+			readcnt--;
 			set_ad_oe(0);
 			delay_clks(TSU_DAT);
 			set_csn(0);
@@ -313,14 +319,20 @@ int main(int argc, char **argv)
 			dat = get_ad();
 			set_csn(1);
 			delay_clks(TH_DAT);
-			/* Write both bytes to the FIFO, MSB first, do not raise
-			 * an IRQ with the first byte, only the second. The CPU
-			 * side is expecting to read a full two bytes in a single
-			 * FIFO readout. It will also be more efficient since this
-			 * can be done in a single I2C transaction. */
+			/* Write both bytes to the FIFO, MSB first. Do not raise
+			 * an IRQ until we're writing the absolute last byte
+			 * of a stream of bytes.
+			 * The CPU side is expecting to read a full two bytes in
+			 * a single FIFO readout. It will also be more efficient
+			 * since this can be done in a single I2C transaction.
+			 */
 			putc_noirq((dat >> 8) & 0xFF);
-			putc(dat & 0xFF);
-			state = GET_CMD;
+			if (!readcnt) {
+				putc(dat & 0xFF);
+				state = GET_CMD;
+			} else {
+				putc_noirq(dat & 0xFF);
+			}
 			break;
 		  default:
 			state = GET_CMD;
