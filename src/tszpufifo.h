@@ -13,5 +13,6 @@ size_t zpu_fifo_put(int twifd, uint8_t *buf, size_t size);
 
 uint16_t zpu_muxbus_peek16(int twifd, uint16_t adr);
 void zpu_muxbus_poke16(int twifd, uint16_t adr, uint16_t dat);
+ssize_t zpu_muxbus_peek16_stream(int twifd, uint16_t adr, uint8_t *dat, ssize_t count);
 
 #endif // __TSZPUFIFO_H__

@@ -218,6 +218,9 @@ size_t zpu_fifo_get(int twifd, uint8_t *buf, size_t size)
 		}
 
 		/* Skip the following if head still behind tail.
+		 * This would mean that, above, size was smaller than the
+		 * distance between the tail and the end of the FIFO buffer
+		 * and we don't need to keep grabbing data.
 		 * Otherwise, keep trying to pull more data from FIFO.
 		 */
 		if (!(txput < txget)) {
@@ -371,4 +374,48 @@ void zpu_muxbus_poke16(int twifd, uint16_t adr, uint16_t dat)
 	}
 	/* Read required to clear IRQ from ZPU side */
 	zpu_fifo_get(twifd, buf, 2);
+}
+
+/* MUXBUS 16bit peek streaming
+ *
+ * The value of count is the number of 16-bit words read from the FIFO, NOT
+ * the actual byte count!
+ *
+ * Note that while ZPU code uses count+1 to account for a value of 0 for a
+ * single word read, the count provided to this function should be the actual
+ * count.
+ *
+ * Internally handles the IRQ from the ZPU. Function only returns when data is
+ * fully read back from the ZPU FIFO.
+ *
+ * Returns the number of bytes read for a sanity check
+ */
+ssize_t zpu_muxbus_peek16_stream(int twifd, uint16_t adr, uint8_t *dat, ssize_t count)
+{
+	char x = '?';
+	uint8_t buf[3];
+	fd_set efds;
+	ssize_t bytes_read;
+
+	/* dat is checked by zpu_fifo_get() so we don't need to worry */
+	/* Ensure that count never exceeds 64 */
+	assert(count <= 64);
+
+	buf[0] = (MB_READ | MB_16BIT | ((count - 1) << 2)) ;
+	buf[1] = (adr >> 8) & 0xFF;
+	buf[2] = (adr & 0xFF);
+
+	zpu_fifo_put(twifd, buf, 3);
+	FD_ZERO(&efds);
+	FD_SET(irqfd, &efds);
+	/* TODO: Check the return value, maybe set a timeout? */
+	select(irqfd + 1, NULL, NULL, &efds, NULL);
+	if (FD_ISSET(irqfd, &efds)) {
+		lseek(irqfd, 0, 0);
+		read(irqfd, &x, 1);
+		assert (x == '0' || x == '1');
+	}
+	bytes_read = zpu_fifo_get(twifd, dat, (count * 2));
+
+	return bytes_read;
 }
