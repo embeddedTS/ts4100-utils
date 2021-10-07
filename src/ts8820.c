@@ -2,6 +2,7 @@
 
 /* Based on ts8820.c for the TS-4700 */
 
+#include <arpa/inet.h>
 #include <stdio.h>
 #include <assert.h>
 #include <unistd.h>
@@ -68,6 +69,7 @@ int hw2sw[16] = {0, 4, 8, 12, 2, 6, 10, 14, 1, 5, 9, 13, 3, 7, 11, 15};
 int g_twifd;
 
 #define peek16(adr) zpu_muxbus_peek16(g_twifd, adr)
+#define peek16_stream(adr, dat, count) zpu_muxbus_peek16_stream(g_twifd, adr, dat, count)
 #define poke16(adr, val) zpu_muxbus_poke16(g_twifd, adr, val)
 
 int ts8820_init(int twifd)
@@ -87,6 +89,7 @@ int ts8820_init(int twifd)
 
 int ts8820_adc_acq(int hz, int n, unsigned short mask) {
         unsigned short buf[0x8000];
+        unsigned short fifo_buf[64], *fifo_buf_p;;
         unsigned short status, config, *p, *q;
         unsigned int pacing, cycle_in, cycle_out;
         unsigned int m1, m2, m3, m4;
@@ -152,19 +155,35 @@ int ts8820_adc_acq(int hz, int n, unsigned short mask) {
                 }
                 status = status & 0x7fff;
                 /* priority 0: output, if buffer is getting full */
-                /* priority 1: input (100 limit is arbitrary) */
-                if ((status > 100) && (acquired - written < 0x3800)
+                /* priority 1: input (64 limit is max ZPU stream) */
+                if ((status > 64) && (acquired - written < 0x3800)
                                    && (goal > acquired)) {
                         if (goal - acquired < status) status = goal - acquired;
                         if (status > 0x800) status = 0x800;
-                        for (i = 0; i < status; i++) {
-                                *q = peek16(0x86);
+                        /* First, gather all of the samples, then iterate
+                         * through them, saving only the desired data. This is
+                         * needed since the channel mask provided to this func
+                         * differs from the channel mask used by the FPGA core.
+                         * In the FPGA, the same 8-bit mask is applied to all
+                         * chips. e.g. if a mask of 0xAA55 is passed to this
+                         * function, thats a mask of 10101010 and 01010101
+                         * that needs to be applied to each chip. This is done
+                         * by applying a mask of 11111111 to each chip and then
+                         * only returning the final values requested here.
+                         * See TS-8820-4100 manual for more detail on this */
+
+                        fifo_buf_p = fifo_buf;
+                        peek16_stream(0x86, (uint8_t *)fifo_buf_p, 64);
+                        for (i = 0; i < 64; i++) {
                                 // test if data is actually desired:
                                 if (m4 & (1 << cyc)) {
+                                        // Data from ZPU is MSB first/big-endian
+                                        *q = ntohs(*fifo_buf_p);
                                         q++;
                                         if (q == buf + 0x8000) q = buf;
                                         acquired++;
                                 }
+                                fifo_buf_p++;
                                 cyc++;
                                 if (cyc == cycle_in) cyc = 0;
                         }
@@ -190,6 +209,7 @@ int ts8820_adc_acq(int hz, int n, unsigned short mask) {
  */
 int ts8820_adc_sam(int hz, int n, int range_in) {
         unsigned short *results;
+        unsigned short tmp[64];
         unsigned short status, ready;
         unsigned int pacing, i, j, collected;
         int x, range = range_in ? 10000 : 5000;
@@ -211,9 +231,13 @@ int ts8820_adc_sam(int hz, int n, int range_in) {
                 status = peek16(0x84);
                 if (status & 0x8000) break;
                 ready = status & 0x7fff;
-                if (ready >= n*16 - i) ready = n*16 - i;
+                if (ready == 0) continue;
+                if (ready > 64) ready = 64; // Stream max 64 samples
+                if (ready >= n*16 - i) ready = n*16 - i; // Read no more than n
+                peek16_stream(0x86, (uint8_t *)tmp, ready);
                 for (j=0; j<ready; j++) {
-                        results[i] = peek16(0x86);
+                        // Data from ZPU is MSB first/big-endian
+                        results[i] = ntohs(tmp[j]);
                         i++;
                 }
         }
