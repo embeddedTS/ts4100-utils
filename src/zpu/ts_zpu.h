@@ -39,14 +39,24 @@
  * I_REG* is read only, and reads the input value of each GPIO pin.
  * OE_REG* is read/write, setting a bit to a 1 sets that pin as an output.
  */
-#define I_REG0		*(volatile unsigned long *)0x2000
-#define I_REG1		*(volatile unsigned long *)0x2004
-#define I_REG2		*(volatile unsigned long *)0x2008
-#define OE_REG0		*(volatile unsigned long *)0x2010
-#define OE_REG1		*(volatile unsigned long *)0x2014
-#define OE_REG2		*(volatile unsigned long *)0x2018
-#define O_REG0		*(volatile unsigned long *)0x2020
-#define O_REG1		*(volatile unsigned long *)0x2024
-#define O_REG2		*(volatile unsigned long *)0x2028
+#define I_REG0_ADR	(volatile unsigned long *)0x2000
+#define I_REG1_ADR	(volatile unsigned long *)0x2004
+#define I_REG2_ADR	(volatile unsigned long *)0x2008
+#define OE_REG0_ADR	(volatile unsigned long *)0x2010
+#define OE_REG1_ADR	(volatile unsigned long *)0x2014
+#define OE_REG2_ADR	(volatile unsigned long *)0x2018
+#define O_REG0_ADR	(volatile unsigned long *)0x2020
+#define O_REG1_ADR	(volatile unsigned long *)0x2024
+#define O_REG2_ADR	(volatile unsigned long *)0x2028
+
+#define I_REG0		*I_REG0_ADR
+#define I_REG1		*I_REG1_ADR
+#define I_REG2		*I_REG2_ADR
+#define OE_REG0		*OE_REG0_ADR
+#define OE_REG1		*OE_REG1_ADR
+#define OE_REG2		*OE_REG2_ADR
+#define O_REG0		*O_REG0_ADR
+#define O_REG1		*O_REG1_ADR
+#define O_REG2		*O_REG2_ADR
 
 #endif // __TS_ZPU_H__

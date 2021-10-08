@@ -9,11 +9,11 @@ all: zpu_muxbus.bin zpu_demo.bin
 %.o: %.c
 	$(CC) $(CFLAGS) -c $<
 
-zpu_muxbus.bin: zpu_fifo.o zpu_muxbus.o
+zpu_demo.bin: fifo.o strings.o zpu_demo.o
 	$(CC) $(CFLAGS) $(LDFLAGS) $^ -o $@
 	$(OBJCOPY) -S -O binary $@
 
-zpu_demo.bin: zpu_fifo.o zpu_strings.o zpu_demo.o
+%.bin: fifo.o muxbus.o %.o
 	$(CC) $(CFLAGS) $(LDFLAGS) $^ -o $@
 	$(OBJCOPY) -S -O binary $@
 

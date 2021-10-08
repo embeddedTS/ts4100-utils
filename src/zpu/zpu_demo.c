@@ -4,8 +4,8 @@
 #include <string.h>
 
 #include "ts_zpu.h"
-#include "zpu_fifo.h"
-#include "zpu_strings.h"
+#include "fifo.h"
+#include "strings.h"
 
 
 /* ZPU Demo application.

@@ -5,7 +5,7 @@
 
 /* putc() is provided by zpu_fifo.c, the final printf call here needs to call
  * putc() to write to the actual ZPU FIFO */
-#include "zpu_fifo.h"
+#include "fifo.h"
 
 /* This function is used from printf() to format int's to printable ASCII
  * Not intended to be called directly
