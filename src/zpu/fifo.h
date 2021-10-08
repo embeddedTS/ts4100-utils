@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: BSD-2-Clause */
 
-#ifndef __ZPU_FIFO_H__
-#define __ZPU_FIFO_H__
+#ifndef __FIFO_H__
+#define __FIFO_H__
 
 /*
  * Place a byte in the ZPU TX FIFO and raise an IRQ after. If flow control is
@@ -44,4 +44,4 @@ void fifo_init(void);
  */
 void fifo_raise_irq0(void);
 
-#endif // __ZPU_FIFO_H__
+#endif // __FIFO_H__
