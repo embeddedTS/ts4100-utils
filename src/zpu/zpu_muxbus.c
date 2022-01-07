@@ -22,7 +22,7 @@
 
 /* MUXBUS timing definitions have been in number of clocks of the main BB clk.
  * In the case of the TS-8820, these are 12.5 MHz. MUXBUS guidelines can be
- * found here: https://wiki.embeddedarm.com/wiki/Generic_MUXBUS
+ * found here: https://wiki.embeddedTS.com/wiki/Generic_MUXBUS
  *
  * The ZPU in the TS-4100 operates at 63 MHz, and has a free running counter
  * that delay times are based on. This means that every 5.04 63 MHz clocks is

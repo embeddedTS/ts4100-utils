@@ -12,7 +12,7 @@
 #include "eval_cmdline.h"
 #include "fpga.h"
 
-const char copyright[] = "Copyright (c) Technologic Systems - " __DATE__ " - "
+const char copyright[] = "Copyright (c) embeddedTS - " __DATE__ " - "
   GITCOMMIT;
 
 static int twifd;
@@ -37,7 +37,7 @@ void usage(char **argv) {
 	fprintf(stderr,
 	  "%s\n\n"
 	  "Usage: %s [OPTIONS] ...\n"
-	  "Technologic Systems I2C FPGA Utility\n"
+	  "embeddedTS I2C FPGA Utility\n"
 	  "\n"
 	  "  -a, --address <addr>   Sets up the address for a peek/poke\n"
 	  "  -w, --poke <value>     Writes the value to the specified address\n"

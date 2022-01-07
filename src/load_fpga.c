@@ -11,7 +11,7 @@
 #include "ispvm.h"
 #include "load_fpga-ts4100.h"
 
-const char copyright[] = "Copyright (c) Technologic Systems - " __DATE__ " - "
+const char copyright[] = "Copyright (c) embeddedTS - " __DATE__ " - "
   GITCOMMIT;
 
 char *get_model()

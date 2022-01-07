@@ -19,7 +19,7 @@
 
 static int twifd;
 
-const char copyright[] = "Copyright (c) Technologic Systems - " __DATE__ " - "
+const char copyright[] = "Copyright (c) embeddedTS - " __DATE__ " - "
   GITCOMMIT;
 
 /* Enum for Hbridge settings */
@@ -52,7 +52,7 @@ static void usage(char **argv) {
 	fprintf(stderr,
 	  "%s\n\n"
 	  "Usage: %s [OPTION] ...\n"
-	  "Technologic Systems TS-8820-4100 FPGA manipulation\n"
+	  "embeddedTS TS-8820-4100 FPGA manipulation\n"
 	  "\n"
 	  " General Options:\n"
 	  "  -R, --read             Read 16-bit register at <addr>\n"

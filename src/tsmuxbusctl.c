@@ -13,7 +13,7 @@
 #include "tszpufifo.h"
 #include "fpga.h"
 
-const char copyright[] = "Copyright (c) Technologic Systems - " __DATE__ " - "
+const char copyright[] = "Copyright (c) embeddedTS - " __DATE__ " - "
   GITCOMMIT;
 
 int get_model()
@@ -37,7 +37,7 @@ static void usage(char **argv) {
 	fprintf(stderr,
 	  "%s\n\n"
 	  "Usage: %s ADDRESS [VALUE]\n"
-	  "Technologic Systems ZPU MUXBUS demo tool\n\n"
+	  "embeddedTS ZPU MUXBUS demo tool\n\n"
 
 	  "  ADDRESS     The MUXBUS address to read/write 16-bit value\n"
 	  "  VALUE       Optional argument, write 16-bit VALUE to ADDRESS\n\n"

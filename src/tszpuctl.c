@@ -26,7 +26,7 @@
 
 static int twifd;
 
-const char copyright[] = "Copyright (c) Technologic Systems - " __DATE__ " - "
+const char copyright[] = "Copyright (c) embeddedTS - " __DATE__ " - "
   GITCOMMIT;
 
 static struct termios tios_orig;
@@ -61,7 +61,7 @@ void usage(char **argv) {
 	fprintf(stderr,
 	  "%s\n\n"
 	  "Usage: %s [OPTIONS] ...\n"
-	  "Technologic Systems ZPU Utility\n"
+	  "embeddedTS ZPU Utility\n"
 	  "\n"
 	  "  -l, --load <path>  Compile, load, and run the specified \".c\"\n"
 	  "                       or binary file in the ZPU\n"

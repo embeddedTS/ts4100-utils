@@ -16,7 +16,7 @@
 
 #include "i2c-dev.h"
 
-const char copyright[] = "Copyright (c) Technologic Systems - " __DATE__ " - "
+const char copyright[] = "Copyright (c) embeddedTS - " __DATE__ " - "
   GITCOMMIT;
 
 int model = 0;
@@ -121,7 +121,7 @@ static void usage(char **argv) {
 	fprintf(stderr,
 	  "%s\n\n"
 	  "Usage: %s [OPTION] ...\n"
-	  "Technologic Systems Microcontroller Access\n"
+	  "embeddedTS Microcontroller Access\n"
 	  "\n"	
 	  "  -h, --help           This message\n"
 	  "  -i, --info           Read all Silabs ADC values\n"
