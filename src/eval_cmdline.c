@@ -14,9 +14,9 @@
 
 #include <assert.h>
 #include <errno.h>
-#include <error.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <stdint.h>
 #include <string.h>
 
 static FILE *cmd_fd = NULL;
@@ -43,7 +43,8 @@ void eval_cmd_init(void)
 
 	cmd_fd = fopen("/proc/cmdline", "r");
 	if ((int32_t)cmd_fd == -1) {
-		error(errno, errno, "Failed to open /proc/cmdline");
+		perror("Failed to open /proc/cmdline");
+		exit(1);
 	}
 
 	for (sz = 0; ; sz++) {
@@ -56,7 +57,8 @@ void eval_cmd_init(void)
 	cmd_str = (char *)calloc(sz+1, sizeof(char));
 	if (cmd_str == NULL) {
 		fclose(cmd_fd);
-		error(errno, errno, "Failed to allocate memory");
+		perror("Failed to allocate memory");
+		exit(1);
 	}
 
 	fread(cmd_str, sizeof(char), sz, cmd_fd);
