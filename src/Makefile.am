@@ -22,5 +22,13 @@ tsmuxbusctl_SOURCES = tszpufifo.c gpiolib.c  fpga.c tsmuxbusctl.c
 tsmuxbusctl_LDFLAGS = -mcpu=cortex-a9
 tsmuxbusctl_CPPFLAGS = -Wall -DGITCOMMIT="\"${GITCOMMIT}\""
 
+zpu_offload_demo_lcd_interface_SOURCES = zpu_offload_demo_lcd_interface.c tszpufifo.c gpiolib.c fpga.c
+zpu_offload_demo_lcd_interface_LDFLAGS = -mcpu=cortex-a9
+zpu_offload_demo_lcd_interface_CPPFLAGS = -Wall -DGITCOMMIT="\"${GITCOMMIT}\""
+
+zpu_offload_demo_lcd_program_SOURCES = zpu_offload_demo_lcd_program.c tszpufifo.c gpiolib.c fpga.c
+zpu_offload_demo_lcd_program_LDFLAGS = -mcpu=cortex-a9
+zpu_offload_demo_lcd_program_CPPFLAGS = -Wall -DGITCOMMIT="\"${GITCOMMIT}\""
+
 bin_PROGRAMS = tshwctl tsmicroctl tszpuctl ts8820ctl tsmuxbusctl
-noinst_PROGRAMS = load_fpga
+noinst_PROGRAMS = load_fpga zpu_offload_demo_lcd_interface zpu_offload_demo_lcd_program

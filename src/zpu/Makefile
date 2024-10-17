@@ -4,7 +4,7 @@ OBJCOPY = zpu-elf-objcopy
 CFLAGS = -abel -Os
 LDFLAGS = -Wl,-relax -Wl,-gc-sections
 
-all: zpu_muxbus.bin zpu_demo.bin
+all: zpu_muxbus.bin zpu_demo.bin zpu_offload_demo.bin
 
 %.o: %.c
 	$(CC) $(CFLAGS) -c $<
