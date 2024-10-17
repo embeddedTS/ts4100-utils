@@ -26,7 +26,7 @@ zpu_offload_demo_lcd_interface_SOURCES = zpu_offload_demo_lcd_interface.c tszpuf
 zpu_offload_demo_lcd_interface_LDFLAGS = -mcpu=cortex-a9
 zpu_offload_demo_lcd_interface_CPPFLAGS = -Wall -DGITCOMMIT="\"${GITCOMMIT}\""
 
-zpu_offload_demo_lcd_program_SOURCES = zpu_offload_demo_lcd_program.c tszpufifo.c gpiolib.c fpga.c
+zpu_offload_demo_lcd_program_SOURCES = zpu_offload_demo_lcd_program.c
 zpu_offload_demo_lcd_program_LDFLAGS = -mcpu=cortex-a9
 zpu_offload_demo_lcd_program_CPPFLAGS = -Wall -DGITCOMMIT="\"${GITCOMMIT}\""
 
