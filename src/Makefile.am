@@ -3,7 +3,7 @@ GITCOMMIT:= $(shell git describe --abbrev=12 --dirty --always)
 tshwctl_SOURCES = tshwctl.c fpga.c eval_cmdline.c
 tshwctl_CPPFLAGS = -Wall -DGITCOMMIT="\"${GITCOMMIT}\""
 
-load_fpga_SOURCES = load_fpga-ts4100.c load_fpga.c -o load_fpga gpiolib.c ispvm.c
+load_fpga_SOURCES = load_fpga-ts4100.c load_fpga.c ispvm.c
 load_fpga_LDFLAGS = -mcpu=cortex-a9
 load_fpga_CPPFLAGS = -Wall -DGITCOMMIT="\"${GITCOMMIT}\""
 
