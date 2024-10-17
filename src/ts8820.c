@@ -76,7 +76,7 @@ int ts8820_init(int twifd)
 {
 	g_twifd = twifd;
 
-	if (zpu_fifo_init(g_twifd, 1) == -1) return 1;
+	if (zpu_fifo_init(g_twifd, 1) == NULL) return 1;
 
         if (0 == (peek16(2) & 0xf)) {
                 fprintf(stderr, "Obsolete TS-8820 FPGA version!\n");
