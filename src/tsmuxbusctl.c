@@ -78,7 +78,7 @@ int main(int argc, char **argv) {
 
 	/* zpu_fifo_init() also returns irqfd, we don't need to worry about that
 	 * unless wanted. The irqfd is maintained by tszpufifo ctx */
-        if (zpu_fifo_init(twifd, FLOW_CTRL) == -1) return 1;
+        if (zpu_fifo_init(twifd, FLOW_CTRL) == NULL) return 1;
 
 	addr = (uint16_t)strtoul(argv[1], NULL, 0);
 

@@ -4,3 +4,5 @@ tshwctl
 tsmicroctl
 tszpuctl
 tsmuxbusctl
+zpu_offload_demo_lcd_interface
+zpu_offload_demo_lcd_program
