@@ -3,10 +3,6 @@ GITCOMMIT:= $(shell git describe --abbrev=12 --dirty --always)
 tshwctl_SOURCES = tshwctl.c fpga.c eval_cmdline.c
 tshwctl_CPPFLAGS = -Wall -DGITCOMMIT="\"${GITCOMMIT}\""
 
-load_fpga_SOURCES = load_fpga-ts4100.c load_fpga.c ispvm.c
-load_fpga_LDFLAGS = -mcpu=cortex-a9
-load_fpga_CPPFLAGS = -Wall -DGITCOMMIT="\"${GITCOMMIT}\""
-
 tszpuctl_SOURCES = tszpuctl.c fpga.c tszpufifo.c
 tszpuctl_LDFLAGS = -mcpu=cortex-a9
 tszpuctl_CPPFLAGS = -Wall -DGITCOMMIT="\"${GITCOMMIT}\""
@@ -31,4 +27,4 @@ zpu_offload_demo_lcd_program_LDFLAGS = -mcpu=cortex-a9
 zpu_offload_demo_lcd_program_CPPFLAGS = -Wall -DGITCOMMIT="\"${GITCOMMIT}\""
 
 bin_PROGRAMS = tshwctl tsmicroctl tszpuctl ts8820ctl tsmuxbusctl
-noinst_PROGRAMS = load_fpga zpu_offload_demo_lcd_interface zpu_offload_demo_lcd_program
+noinst_PROGRAMS = zpu_offload_demo_lcd_interface zpu_offload_demo_lcd_program
