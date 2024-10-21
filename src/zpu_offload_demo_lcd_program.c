@@ -12,9 +12,6 @@
 #include <termios.h>
 #include <unistd.h>
 
-#include "tszpufifo.h"
-#include "fpga.h"
-
 const char copyright[] = "Copyright (c) embeddedTS - " __DATE__ " - "
   GITCOMMIT;
 

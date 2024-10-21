@@ -6,31 +6,28 @@
 #include <stdlib.h>
 #include <string.h>
 #include <getopt.h>
-#include <asm-generic/ioctls.h>
 #include <fcntl.h>
 #include <unistd.h>
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <sys/select.h>
-#include <errno.h>
 #include <stdint.h>
+#include <time.h>
 #include <linux/types.h>
 #include <linux/limits.h>
-#include <math.h>
-#include <sys/time.h>
-#include <termios.h>
-#include <signal.h>
+#include <gpiod.h>
 
 #include "fpga.h"
-#include "gpiolib.h"
 
 /* CPU GPIO number for the IRQ that the ZPU can control */
-#define FPGA_IRQ	129
+#define FPGA_IRQ_CHIP	4
+#define FPGA_IRQ_LINE	1
 /* These numbers are from the perspective of the FPGA top level decode */
 #define ZPU_RAM_START	0x2000
 #define ZPU_RAM_SZ	0x2000
 
-static int irqfd;
+struct gpiod_chip *chip = NULL;
+static struct gpiod_line *irq_line;
 static uint32_t fifo_adr;
 static uint32_t fifo_flags;
 /* RX and TX naming is from the ZPU's point of view */
@@ -74,15 +71,29 @@ static void zpu_rx_recalc(int twifd)
  *
  * Can be called directly.
  */
-int32_t zpu_fifo_init(int twifd, int flow_control)
+struct gpiod_line *zpu_fifo_init(int twifd, int flow_control)
 {
-	char gpio_buf[64];
-	char x = '?';
+	struct timespec timeout = {0};
+	struct gpiod_line_event event = {0};
 
-	/* Use gpiolib functions to open IRQ, set input, and rising edge trig */
-	gpio_export(FPGA_IRQ);
-	gpio_direction(FPGA_IRQ, 0);
-	gpio_setedge(FPGA_IRQ, 1, 0);
+	/* Set a 1 nanosecond timeout, as close to returning instantly */
+	/* XXX: TODO: This may not be needed? */
+	timeout.tv_nsec = 1;
+
+	/* Open IRQ, set input, and rising edge trig */
+	chip = gpiod_chip_open_by_number(FPGA_IRQ_CHIP);
+	if (chip == NULL) {
+		return NULL;
+	}
+
+	irq_line = gpiod_chip_get_line(chip, FPGA_IRQ_LINE);
+	if (irq_line == NULL) {
+		return NULL;
+	}
+
+	if (gpiod_line_request_rising_edge_events(irq_line, "tszpuctl")) {
+		return NULL;
+	}
 
 	/*
 	 * Set up FIFO link addresses
@@ -99,7 +110,7 @@ int32_t zpu_fifo_init(int twifd, int flow_control)
 		fprintf(stderr, "ZPU connection refused\n");
 		fprintf(stderr, "Is the ZPU application loaded and running?\n");
 		close(twifd);
-		return -1;
+		return NULL;
 	}
 	fifo_adr += ZPU_RAM_START;
 
@@ -150,16 +161,12 @@ int32_t zpu_fifo_init(int twifd, int flow_control)
 	zpu_rx_recalc(twifd);
 
 
-	/* ZPU drives the FPGA IRQ line. */
-	snprintf(gpio_buf, sizeof(gpio_buf), "/sys/class/gpio/gpio%d/value",
-	  FPGA_IRQ);
-	irqfd = open(gpio_buf, O_RDONLY);
+	/* Drain the IRQ in case there is a spurious IRQ waiting */
+	while (gpiod_line_event_wait(irq_line, &timeout) == 1) {
+		gpiod_line_event_read(irq_line, &event);
+	}
 
-	/* Drain the IRQ FD in case there is a spurious IRQ waiting */
-	lseek(irqfd, 0, 0);
-	read(irqfd, &x, 1);
-
-	return irqfd;
+	return irq_line;
 };
 
 /* This function should be called when disconnecting from the FIFO
@@ -173,7 +180,8 @@ void zpu_fifo_deinit(int twifd)
 {
 	fifo_flags |= (1<<25);
 	fpoke8(twifd, fifo_adr, fifo_flags >> 24);
-	close(irqfd);
+	gpiod_line_release(irq_line);
+	gpiod_chip_close(chip);
 }
 
 /* The get and put functions are named from the CPU perspective, while variables
@@ -323,24 +331,22 @@ size_t zpu_fifo_put(int twifd, uint8_t *buf, size_t size)
  */
 uint16_t zpu_muxbus_peek16(int twifd, uint16_t adr)
 {
-	char x = '?';
 	uint8_t buf[3];
-	fd_set efds;
+	struct gpiod_line_event event = {0};
 
 	buf[0] = (MB_READ | MB_16BIT);
 	buf[1] = (adr >> 8) & 0xFF;
 	buf[2] = (adr & 0xFF);
 
 	zpu_fifo_put(twifd, buf, 3);
-	FD_ZERO(&efds);
-	FD_SET(irqfd, &efds);
-	/* TODO: Check the return value, maybe set a timeout? */
-	select(irqfd + 1, NULL, NULL, &efds, NULL);
-	if (FD_ISSET(irqfd, &efds)) {
-		lseek(irqfd, 0, 0);
-		read(irqfd, &x, 1);
-		assert (x == '0' || x == '1');
-	}
+	/* Wait forever for a rising event on the IRQ
+	 * We're only subscribed to rising events so no need to check
+	 * what the actual event was.
+	 * TODO: Should we allow a timeout using gpiod_line_event_wait
+	 * first?
+	 */
+	gpiod_line_event_read(irq_line, &event);
+
 	zpu_fifo_get(twifd, buf, 2);
 	return (uint16_t)(((buf[0] << 8) & 0xFF00) + (buf[1] & 0xFF));
 }
@@ -352,9 +358,8 @@ uint16_t zpu_muxbus_peek16(int twifd, uint16_t adr)
  */
 void zpu_muxbus_poke16(int twifd, uint16_t adr, uint16_t dat)
 {
-	char x = '?';
 	uint8_t buf[5];
-	fd_set efds;
+	struct gpiod_line_event event = {0};
 
 	buf[0] = (MB_WRITE | MB_16BIT);
 	buf[1] = (adr >> 8) & 0xFF;
@@ -363,15 +368,14 @@ void zpu_muxbus_poke16(int twifd, uint16_t adr, uint16_t dat)
 	buf[4] = (dat & 0xFF);
 
 	zpu_fifo_put(twifd, buf, 5);
-	FD_ZERO(&efds);
-	FD_SET(irqfd, &efds);
-	/* TODO: Check the return value, maybe set a timeout? */
-	select(irqfd + 1, NULL, NULL, &efds, NULL);
-	if (FD_ISSET(irqfd, &efds)) {
-		lseek(irqfd, 0, 0);
-		read(irqfd, &x, 1);
-		assert (x == '0' || x == '1');
-	}
+	/* Wait forever for a rising event on the IRQ
+	 * We're only subscribed to rising events so no need to check
+	 * what the actual event was.
+	 * TODO: Should we allow a timeout using gpiod_line_event_wait
+	 * first?
+	 */
+	gpiod_line_event_read(irq_line, &event);
+
 	/* Read required to clear IRQ from ZPU side */
 	zpu_fifo_get(twifd, buf, 2);
 }
@@ -392,10 +396,9 @@ void zpu_muxbus_poke16(int twifd, uint16_t adr, uint16_t dat)
  */
 ssize_t zpu_muxbus_peek16_stream(int twifd, uint16_t adr, uint8_t *dat, ssize_t count)
 {
-	char x = '?';
 	uint8_t buf[3];
-	fd_set efds;
 	ssize_t bytes_read;
+	struct gpiod_line_event event = {0};
 
 	/* dat is checked by zpu_fifo_get() so we don't need to worry */
 	/* Ensure that count never exceeds 64 */
@@ -406,15 +409,14 @@ ssize_t zpu_muxbus_peek16_stream(int twifd, uint16_t adr, uint8_t *dat, ssize_t 
 	buf[2] = (adr & 0xFF);
 
 	zpu_fifo_put(twifd, buf, 3);
-	FD_ZERO(&efds);
-	FD_SET(irqfd, &efds);
-	/* TODO: Check the return value, maybe set a timeout? */
-	select(irqfd + 1, NULL, NULL, &efds, NULL);
-	if (FD_ISSET(irqfd, &efds)) {
-		lseek(irqfd, 0, 0);
-		read(irqfd, &x, 1);
-		assert (x == '0' || x == '1');
-	}
+	/* Wait forever for a rising event on the IRQ
+	 * We're only subscribed to rising events so no need to check
+	 * what the actual event was.
+	 * TODO: Should we allow a timeout using gpiod_line_event_wait
+	 * first?
+	 */
+	gpiod_line_event_read(irq_line, &event);
+
 	bytes_read = zpu_fifo_get(twifd, dat, (count * 2));
 
 	return bytes_read;

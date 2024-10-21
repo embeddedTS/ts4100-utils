@@ -4,6 +4,7 @@
 
 #include <errno.h>
 #include <fcntl.h>
+#include <gpiod.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -232,10 +233,10 @@ int main(int argc, char **argv) {
 	uint8_t fifobuf[9]; // At most we expect 8 bytes
 	int16_t temp;
 	char lcdbuf[4][21] = {0};
-	int irqfd;
+	struct gpiod_line *irq_line = NULL;
+	int irq_line_fd;
 	int lcdfd = 0;
-	char x = '?';
-	fd_set efds;
+	fd_set rfds;
 	int i;
 
 	if(get_model() != 0x4100) {
@@ -256,9 +257,18 @@ int main(int argc, char **argv) {
 	 * This application cares about the IRQ from the ZPU as that is the
 	 * signal that the whole packet we expect has been written to the FIFO.
 	 */
-	irqfd = zpu_fifo_init(twifd, FLOW_CTRL);
-	if (irqfd < 0) {
+	irq_line = zpu_fifo_init(twifd, FLOW_CTRL);
+	if (irq_line == NULL) {
 		goto out;
+	}
+
+	/* The gpiod line returned above is already subscribed to rising edge
+	 * events, we just need to get the fd for it in order to use select()
+	 * on it to be able to sleep and wait for input from the ZPU.
+	 */
+	irq_line_fd = gpiod_line_event_get_fd(irq_line);
+	if (irq_line_fd < 0) {
+		goto out_fifo;
 	}
 
 	while(1) {
@@ -288,15 +298,16 @@ int main(int argc, char **argv) {
 		/* Wait for IRQ from ZPU to denote the packet is complete and
 		 * ready to consume.
 		 */
-		FD_ZERO(&efds);
-		FD_SET(irqfd, &efds);
-		select(irqfd + 1, NULL, NULL, &efds, NULL);
-		if (FD_ISSET(irqfd, &efds)) {
-			lseek(irqfd, 0, 0);
-			read(irqfd, &x, 1);
-			assert (x == '0' || x == '1');
+		FD_ZERO(&rfds);
+		FD_SET(irq_line_fd, &rfds);
+		if (select(irq_line_fd + 1, &rfds, NULL, NULL, NULL) < 0) {
+			FD_CLR(irq_line_fd, &rfds);
+			continue;
 		}
-		zpu_fifo_get(twifd, fifobuf, sizeof(fifobuf));
+
+
+		if (FD_ISSET(irq_line_fd, &rfds))
+			zpu_fifo_get(twifd, fifobuf, sizeof(fifobuf));
 
 		/* Update buffers to write to the LCD screen */
 		if (fifobuf[0]) {
@@ -335,8 +346,8 @@ int main(int argc, char **argv) {
 		}
 	}
 
+out_fifo:
 	zpu_fifo_deinit(twifd);
-
 out:
 	fpga_deinit(twifd);
 

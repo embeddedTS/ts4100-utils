@@ -296,17 +296,19 @@ int main(int argc, char **argv)
 	}
 
 	if(opt_connect) {
-		int irqfd;
+		struct gpiod_line *irq_line = NULL;
+		int irq_line_fd;
 		ssize_t r;
 		size_t wrsz;
 		int rdsz;
-		fd_set rfds, efds;
+		fd_set rfds;
 
-		irqfd = zpu_fifo_init(twifd, 1);
-		if (irqfd == -1) {
+		irq_line = zpu_fifo_init(twifd, 1);
+		if (irq_line == NULL) {
 			fprintf(stderr, "Unable to communicate with ZPU!\n");
 			return 1;
 		}
+		irq_line_fd = gpiod_line_event_get_fd(irq_line);
 
 		/* Catch any signals that might be received.
 		 * Later used to gracefully shutdown the FIFO pipe
@@ -339,12 +341,11 @@ int main(int argc, char **argv)
 		setvbuf(stdout, NULL, _IONBF, 0);
 
 		FD_ZERO(&rfds);
-		FD_ZERO(&efds);
 
 		while(1) {
 			/* When there is an interrupt from the ZPU, read the
 			 * current FIFO tail; this clears the IRQ from FPGA. */
-			if (FD_ISSET(irqfd, &efds)) {
+			if (FD_ISSET(irq_line_fd, &rfds)) {
 				do {
 					rdsz = zpu_fifo_get(twifd, buf, 256);
 					fwrite(buf, 1, rdsz, stdout);
@@ -392,23 +393,20 @@ int main(int argc, char **argv)
 			 * pending, the FDs are reset, and select() is eval'ed
 			 * again.
 			 */
-			if (FD_ISSET(irqfd, &efds)) {
-				char x = '?';
-				lseek(irqfd, 0, 0);
-				read(irqfd, &x, 1);
-				assert (x == '0' || x == '1');
-				if (x == '1') continue;	
+			if (FD_ISSET(irq_line_fd, &rfds)) {
+				if (gpiod_line_get_value(irq_line))
+					continue;
 			} else {
-				FD_SET(irqfd, &efds);
+				FD_SET(irq_line_fd, &rfds);
 			}
 
 			FD_SET(0, &rfds);
 
-			i = select(irqfd + 1, &rfds, NULL, &efds, NULL);
+			i = select(irq_line_fd + 1, &rfds, NULL, NULL, NULL);
 			if (i == -1) {
 				FD_CLR(0, &rfds);
-				FD_CLR(irqfd, &efds);
-			} 
+				FD_CLR(irq_line_fd, &rfds);
+			}
 		}
 
 		/* Upon exit of this main loop, restore term settings if we were
