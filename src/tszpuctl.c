@@ -23,6 +23,7 @@
 
 #include "fpga.h"
 #include "tszpufifo.h"
+#include "gpiod-helper.h"
 
 static int twifd;
 
@@ -296,7 +297,7 @@ int main(int argc, char **argv)
 	}
 
 	if(opt_connect) {
-		struct gpiod_line *irq_line = NULL;
+		struct gpiod_line_request *irq_line = NULL;
 		int irq_line_fd;
 		ssize_t r;
 		size_t wrsz;
@@ -308,7 +309,7 @@ int main(int argc, char **argv)
 			fprintf(stderr, "Unable to communicate with ZPU!\n");
 			return 1;
 		}
-		irq_line_fd = gpiod_line_event_get_fd(irq_line);
+		irq_line_fd = gpiod_line_request_get_fd(irq_line);
 
 		/* Catch any signals that might be received.
 		 * Later used to gracefully shutdown the FIFO pipe
@@ -393,20 +394,25 @@ int main(int argc, char **argv)
 			 * pending, the FDs are reset, and select() is eval'ed
 			 * again.
 			 */
-			if (FD_ISSET(irq_line_fd, &rfds)) {
-				if (gpiod_line_get_value(irq_line))
-					continue;
-			} else {
-				FD_SET(irq_line_fd, &rfds);
-			}
+			if (FD_ISSET(irq_line_fd, &rfds) &&
+			    zpu_irq_pending())
+				continue;
 
+			FD_ZERO(&rfds);
+			FD_SET(irq_line_fd, &rfds);
 			FD_SET(0, &rfds);
 
 			i = select(irq_line_fd + 1, &rfds, NULL, NULL, NULL);
-			if (i == -1) {
-				FD_CLR(0, &rfds);
-				FD_CLR(irq_line_fd, &rfds);
-			}
+			if (i == -1)
+				FD_ZERO(&rfds);
+
+			/* With gpiod 2.x, the filedes handed to us by the library
+			 * cannot be read from. The only way to clear the ready
+			 * state of the filedes is to drain all of the pending IRQ
+			 * events. Do it here, since, as soon as we write to the
+			 * ZPU, a new IRQ will come in.
+			 */
+			zpu_irq_drain();
 		}
 
 		/* Upon exit of this main loop, restore term settings if we were

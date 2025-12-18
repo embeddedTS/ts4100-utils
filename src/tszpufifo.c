@@ -18,16 +18,17 @@
 #include <gpiod.h>
 
 #include "fpga.h"
+#include "gpiod-helper.h"
 
 /* CPU GPIO number for the IRQ that the ZPU can control */
-#define FPGA_IRQ_CHIP	4
+#define FPGA_IRQ_CHIP	"/dev/gpiochip4"
 #define FPGA_IRQ_LINE	1
 /* These numbers are from the perspective of the FPGA top level decode */
 #define ZPU_RAM_START	0x2000
 #define ZPU_RAM_SZ	0x2000
 
-struct gpiod_chip *chip = NULL;
-static struct gpiod_line *irq_line;
+static struct gpiod_line_request *irq_line;
+static struct gpiod_edge_event_buffer *event;
 static uint32_t fifo_adr;
 static uint32_t fifo_flags;
 /* RX and TX naming is from the ZPU's point of view */
@@ -56,6 +57,31 @@ static void zpu_rx_recalc(int twifd)
 	}
 }
 
+void zpu_irq_drain(void)
+{
+	while (gpiod_line_request_wait_edge_events(irq_line, 0) == 1) {
+		gpiod_line_request_read_edge_events(irq_line, event, 1);
+	}
+}
+
+
+/* Helper function to read the current value of the IRQ line to report back if
+ * there is still an IRQ pending.
+ * Returns true if IRQ is still high and therefore there is still more data to
+ * be read.
+ *
+ * Note that this assumes reading the value will never fail.
+ */
+bool zpu_irq_pending(void)
+{
+	if (gpiod_line_request_get_value(irq_line, FPGA_IRQ_LINE) ==
+	    GPIOD_LINE_VALUE_ACTIVE)
+		return true;
+	else
+		return false;
+}
+		
+
 /* This function must be called before any FIFO operations take place.
  * This function sets up the IRC, verifies that the running ZPU has the common
  * FIFO struct set up, and then gathers location information of the ZPU RAM
@@ -71,27 +97,12 @@ static void zpu_rx_recalc(int twifd)
  *
  * Can be called directly.
  */
-struct gpiod_line *zpu_fifo_init(int twifd, int flow_control)
+struct gpiod_line_request *zpu_fifo_init(int twifd, int flow_control)
 {
-	struct timespec timeout = {0};
-	struct gpiod_line_event event = {0};
+	event = gpiod_edge_event_buffer_new(1);
 
-	/* Set a 1 nanosecond timeout, as close to returning instantly */
-	/* XXX: TODO: This may not be needed? */
-	timeout.tv_nsec = 1;
-
-	/* Open IRQ, set input, and rising edge trig */
-	chip = gpiod_chip_open_by_number(FPGA_IRQ_CHIP);
-	if (chip == NULL) {
-		return NULL;
-	}
-
-	irq_line = gpiod_chip_get_line(chip, FPGA_IRQ_LINE);
+	irq_line = request_input_line_rising(FPGA_IRQ_CHIP, FPGA_IRQ_LINE, "tszpuctl");
 	if (irq_line == NULL) {
-		return NULL;
-	}
-
-	if (gpiod_line_request_rising_edge_events(irq_line, "tszpuctl")) {
 		return NULL;
 	}
 
@@ -162,9 +173,7 @@ struct gpiod_line *zpu_fifo_init(int twifd, int flow_control)
 
 
 	/* Drain the IRQ in case there is a spurious IRQ waiting */
-	while (gpiod_line_event_wait(irq_line, &timeout) == 1) {
-		gpiod_line_event_read(irq_line, &event);
-	}
+	zpu_irq_drain();
 
 	return irq_line;
 };
@@ -180,8 +189,9 @@ void zpu_fifo_deinit(int twifd)
 {
 	fifo_flags |= (1<<25);
 	fpoke8(twifd, fifo_adr, fifo_flags >> 24);
-	gpiod_line_release(irq_line);
-	gpiod_chip_close(chip);
+	gpiod_edge_event_buffer_free(event);
+	gpiod_line_request_release(irq_line);
+	irq_line = NULL;
 }
 
 /* The get and put functions are named from the CPU perspective, while variables
@@ -332,7 +342,6 @@ size_t zpu_fifo_put(int twifd, uint8_t *buf, size_t size)
 uint16_t zpu_muxbus_peek16(int twifd, uint16_t adr)
 {
 	uint8_t buf[3];
-	struct gpiod_line_event event = {0};
 
 	buf[0] = (MB_READ | MB_16BIT);
 	buf[1] = (adr >> 8) & 0xFF;
@@ -345,7 +354,8 @@ uint16_t zpu_muxbus_peek16(int twifd, uint16_t adr)
 	 * TODO: Should we allow a timeout using gpiod_line_event_wait
 	 * first?
 	 */
-	gpiod_line_event_read(irq_line, &event);
+	gpiod_line_request_read_edge_events(irq_line, event, 1);
+	zpu_irq_drain();
 
 	zpu_fifo_get(twifd, buf, 2);
 	return (uint16_t)(((buf[0] << 8) & 0xFF00) + (buf[1] & 0xFF));
@@ -359,7 +369,6 @@ uint16_t zpu_muxbus_peek16(int twifd, uint16_t adr)
 void zpu_muxbus_poke16(int twifd, uint16_t adr, uint16_t dat)
 {
 	uint8_t buf[5];
-	struct gpiod_line_event event = {0};
 
 	buf[0] = (MB_WRITE | MB_16BIT);
 	buf[1] = (adr >> 8) & 0xFF;
@@ -374,7 +383,8 @@ void zpu_muxbus_poke16(int twifd, uint16_t adr, uint16_t dat)
 	 * TODO: Should we allow a timeout using gpiod_line_event_wait
 	 * first?
 	 */
-	gpiod_line_event_read(irq_line, &event);
+	gpiod_line_request_read_edge_events(irq_line, event, 1);
+	zpu_irq_drain();
 
 	/* Read required to clear IRQ from ZPU side */
 	zpu_fifo_get(twifd, buf, 2);
@@ -398,7 +408,6 @@ ssize_t zpu_muxbus_peek16_stream(int twifd, uint16_t adr, uint8_t *dat, ssize_t 
 {
 	uint8_t buf[3];
 	ssize_t bytes_read;
-	struct gpiod_line_event event = {0};
 
 	/* dat is checked by zpu_fifo_get() so we don't need to worry */
 	/* Ensure that count never exceeds 64 */
@@ -415,7 +424,8 @@ ssize_t zpu_muxbus_peek16_stream(int twifd, uint16_t adr, uint8_t *dat, ssize_t 
 	 * TODO: Should we allow a timeout using gpiod_line_event_wait
 	 * first?
 	 */
-	gpiod_line_event_read(irq_line, &event);
+	gpiod_line_request_read_edge_events(irq_line, event, 1);
+	zpu_irq_drain();
 
 	bytes_read = zpu_fifo_get(twifd, dat, (count * 2));
 
