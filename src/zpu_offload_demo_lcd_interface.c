@@ -233,7 +233,7 @@ int main(int argc, char **argv) {
 	uint8_t fifobuf[9]; // At most we expect 8 bytes
 	int16_t temp;
 	char lcdbuf[4][21] = {0};
-	struct gpiod_line *irq_line = NULL;
+	struct gpiod_line_request *irq_line = NULL;
 	int irq_line_fd;
 	int lcdfd = 0;
 	fd_set rfds;
@@ -266,7 +266,7 @@ int main(int argc, char **argv) {
 	 * events, we just need to get the fd for it in order to use select()
 	 * on it to be able to sleep and wait for input from the ZPU.
 	 */
-	irq_line_fd = gpiod_line_event_get_fd(irq_line);
+	irq_line_fd = gpiod_line_request_get_fd(irq_line);
 	if (irq_line_fd < 0) {
 		goto out_fifo;
 	}
@@ -304,6 +304,10 @@ int main(int argc, char **argv) {
 			FD_CLR(irq_line_fd, &rfds);
 			continue;
 		}
+		/* The only way to make the event filedes no longer readable
+		 * is to consume any and all events on the gpiod line.
+		 */
+		zpu_irq_drain();
 
 
 		if (FD_ISSET(irq_line_fd, &rfds))

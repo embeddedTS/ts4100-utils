@@ -3,7 +3,6 @@
 /* Based on ts8820ctl.c for the TS-4700 */
 
 #include <assert.h>
-#include <gpiod.h>
 #include <fcntl.h>
 #include <getopt.h>
 #include <gpiod.h>
@@ -16,6 +15,7 @@
 
 #include "ts8820.h"
 #include "fpga.h"
+#include "gpiod-helper.h"
 
 static int twifd;
 
@@ -113,15 +113,22 @@ static void usage(char **argv) {
 int main(int argc, char **argv) {
 	/* General */
 	int c;
+	int i;
 	int model;
 	int opt_address = -1, opt_read = 0, opt_write = 0, opt_writearg = 0;
 	/* ADC specific */
 	int opt_sample = 0, opt_acquire = 0;
 	int opt_rate = 10000, opt_mask = 0xffff;
 	int opt_range = 0, opt_oversample = 1;
-	struct gpiod_chip *chip;
-	struct gpiod_line *line22_range, *line23_range;
-	struct gpiod_line *line24_os, *line25_os, *line26_os;
+	enum gpiod_line_value range = GPIOD_LINE_VALUE_INACTIVE;
+	enum gpiod_line_value oversample[3] = { GPIOD_LINE_VALUE_ACTIVE,
+						GPIOD_LINE_VALUE_INACTIVE,
+						GPIOD_LINE_VALUE_INACTIVE };
+	struct gpiod_line_request *line22_range = NULL,
+				  *line23_range = NULL;
+	struct gpiod_line_request *line24_os = NULL,
+				  *line25_os = NULL,
+				  *line26_os = NULL;
 	/* PWM specific */
 	int opt_pwm = 0, opt_pwmduty = 0, opt_prescaler = 0;
 	/* DAC specific */
@@ -191,9 +198,19 @@ int main(int argc, char **argv) {
 			break;
 		  case 'n': /* ADC input voltage range */
 			opt_range = !!strtoul(optarg, NULL, 0);
+			if (opt_range)
+				range = GPIOD_LINE_VALUE_ACTIVE;
+			else
+				range = GPIOD_LINE_VALUE_INACTIVE;
 			break;
 		  case 'o': /* ADC oversampling rate */
 			opt_oversample = (strtoul(optarg, NULL, 0) & 0x7);
+			for (i = 0; i < 3; i++) {
+				if (opt_oversample & (1 << i))
+					oversample[i] = GPIOD_LINE_VALUE_ACTIVE;
+				else
+					oversample[i] = GPIOD_LINE_VALUE_INACTIVE;
+			}
 			break;
 		  case 'd': /* DAC channel number */
 			opt_setdac = strtoul(optarg, NULL, 0);
@@ -298,25 +315,48 @@ int main(int argc, char **argv) {
 	if (opt_DO) ts8820_do_set(opt_DOarg);
 
 	if (opt_sample || opt_acquire) {
-		/* TODO: Look in to the currently undocumented libgpiod API for
-		 * better information on bulk/group setting of GPIO pins
-		 */
-		chip = gpiod_chip_open_by_number(3);
-		line22_range = gpiod_chip_get_line(chip, 22);
-		line23_range = gpiod_chip_get_line(chip, 23);
-		gpiod_line_request_output(line22_range, "ts8820ctl", opt_range);
-		gpiod_line_request_output(line23_range, "ts8820ctl", opt_range);
+		line22_range = request_output_line("/dev/gpiochip3",
+						   22,
+						   range,
+						   "ts8820ctl");
+		if (!line22_range) {
+			fprintf(stderr, "Unable to set line22 range\n");
+			return 1;
+		}
+		line23_range = request_output_line("/dev/gpiochip3",
+						   23,
+						   range,
+						   "ts8820ctl");
+		if (!line23_range) {
+			fprintf(stderr, "Unable to set line23 range\n");
+			return 1;
+		}
 
 		if (opt_oversample) {
-			line24_os = gpiod_chip_get_line(chip, 24);
-			line25_os = gpiod_chip_get_line(chip, 25);
-			line26_os = gpiod_chip_get_line(chip, 26);
-			gpiod_line_request_output(line24_os, "ts8820ctl",
-			  !!(opt_oversample & 0x1));
-			gpiod_line_request_output(line25_os, "ts8820ctl",
-			  !!(opt_oversample & 0x2));
-			gpiod_line_request_output(line26_os, "ts8820ctl",
-			  !!(opt_oversample & 0x4));
+			line24_os = request_output_line("/dev/gpiochip3",
+							24,
+							oversample[0],
+							"ts8820ctl");
+			if (!line24_os) {
+				fprintf(stderr, "Unable to set line24 oversample\n");
+				return 1;
+			}
+			line25_os = request_output_line("/dev/gpiochip3",
+							25,
+							oversample[1],
+							"ts8820ctl");
+			if (!line25_os) {
+				fprintf(stderr, "Unable to set line25 oversample\n");
+				return 1;
+			}
+			line26_os = request_output_line("/dev/gpiochip3",
+							26,
+							oversample[2],
+							"ts8820ctl");
+			if (!line26_os) {
+				fprintf(stderr, "Unable to set line26 oversample\n");
+				return 1;
+			}
 		}
 
 		if (opt_sample) ts8820_adc_sam(opt_rate, opt_sample, opt_range);
